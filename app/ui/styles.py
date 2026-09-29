@@ -66,6 +66,7 @@ def stylesheet() -> str:
         border-radius: {R_LG}px;
     }}
     #TitleBar {{ background: transparent; }}
+    #Scroll {{ background: transparent; border: none; }}
     #AppName {{
         font-size: 14px;
         font-weight: 600;

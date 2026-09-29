@@ -51,7 +51,7 @@ jobs:
         run: bash packaging/build_deb.sh dist
 
       - name: Validate .deb
-        run: bash packaging/validate_deb.sh dist/movo_0.2.1_all.deb
+        run: bash packaging/validate_deb.sh dist/movo_0.3.0_all.deb
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

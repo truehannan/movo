@@ -73,15 +73,15 @@ def test_x11_press_key_parses_combo(monkeypatch):
 
 def test_main_build_backend_returns_a_backend(monkeypatch):
     """_build_backend must always return a usable DesktopBackend."""
-    # Force the X11 backend import to fail so the null fallback path runs.
-    import app.desktop.x11_backend as x
+    # Force the proven backend import to fail so the null fallback path runs.
+    import app.desktop.lcu_backend as lcu
     from app import main
     from app.desktop.backend import DesktopBackend
 
     def boom():
         raise RuntimeError("no display")
 
-    monkeypatch.setattr(x, "X11DesktopBackend", boom)
+    monkeypatch.setattr(lcu, "LcuBackend", boom)
     backend = main._build_backend()
     assert isinstance(backend, DesktopBackend)
     # The null backend degrades safely.

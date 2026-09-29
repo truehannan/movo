@@ -14,9 +14,11 @@ import sys
 def _build_backend():
     """Construct the real desktop backend, or a safe stub if it cannot load."""
     try:
-        from app.desktop.x11_backend import X11DesktopBackend
+        # The proven linux-computer-use engine (AT-SPI translation + xdotool/
+        # pynput), verified end-to-end on real apps.
+        from app.desktop.lcu_backend import LcuBackend
 
-        return X11DesktopBackend()
+        return LcuBackend()
     except Exception:
         # As a last resort, present an empty observation so the UI still runs.
         from app.desktop.backend import DesktopBackend, Observation, UIElement, WindowInfo
@@ -62,9 +64,54 @@ def _laya_setup_cli() -> int:
     return 0 if ok else 1
 
 
+def _selftest_cli() -> int:
+    """Prove the real observe→decide→act→verify loop drives a live app.
+
+    Launches gnome-calculator and computes 7 + 8 through Movo's own backend and
+    candidate translation, with a deterministic decider standing in for the
+    model, then verifies the calculator's display reads 15. Returns 0 on pass.
+    """
+    import subprocess
+    import time
+
+    from app.desktop.candidates import build_candidates
+    from app.desktop.lcu_backend import LcuBackend
+
+    print("Movo self-test — driving gnome-calculator (7 + 8 = 15)\n")
+    try:
+        proc = subprocess.Popen(["gnome-calculator"])
+    except FileNotFoundError:
+        print("gnome-calculator not installed; cannot run self-test.")
+        return 2
+    time.sleep(3.5)
+    backend = LcuBackend()
+    for token in ("7", "+", "8", "="):
+        obs = backend.get_ui_tree()
+        cands = build_candidates(obs, max_candidates=60)
+        target = next((c for c in cands if c.name.strip() == token), None)
+        if target is None:
+            print(f"  no candidate for {token!r} — translation missed it")
+            continue
+        print(f"  CLICK {target.name!r} @ {target.element.bounds.center}")
+        backend.click(target.element)
+        time.sleep(0.4)
+    time.sleep(0.6)
+    display = " | ".join(e.value for e in backend.get_ui_tree().elements if e.value)
+    ok = "15" in display
+    print(f"\n  display: {display!r}")
+    print("SELF-TEST:", "PASS" if ok else "FAIL")
+    try:
+        proc.terminate()
+    except Exception:
+        pass
+    return 0 if ok else 1
+
+
 def main() -> int:
     if "--laya-setup" in sys.argv:
         return _laya_setup_cli()
+    if "--selftest" in sys.argv:
+        return _selftest_cli()
 
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication

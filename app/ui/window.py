@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -57,7 +58,7 @@ _PAGE_MODEL = 2
 _PAGE_SETTINGS = 3
 
 _WIN_W = 720
-_WIN_H = 360
+_WIN_H = 250  # short island; content scrolls when it needs more room
 
 # Dynamic-island geometry.
 _PEEK = 6            # px of the island left visible when retracted
@@ -160,7 +161,7 @@ class MainWindow(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setFixedWidth(_WIN_W)
-        self.setMinimumHeight(_WIN_H)
+        self.setFixedHeight(_WIN_H)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -183,7 +184,15 @@ class MainWindow(QWidget):
         self.stack.addWidget(self.panel)          # 1
         self.stack.addWidget(self.model_view)     # 2
         self.stack.addWidget(self.settings_view)  # 3
-        root_l.addWidget(self.stack, 1)
+
+        # Scroll the active view when it is taller than the short island.
+        scroll = QScrollArea()
+        scroll.setObjectName("Scroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(self.stack)
+        root_l.addWidget(scroll, 1)
 
         self.setStyleSheet(styles.stylesheet())
 

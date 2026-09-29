@@ -30,20 +30,32 @@ Task Controller  →  Planner (goal → text/key arguments, no Jev)
   ↓
 Agent Loop:  observe → decide → act → verify
   │
-  ├─ Desktop Observer   AT-SPI accessibility tree, active window, focus
+  ├─ Desktop Observer   proven AT-SPI engine → windows, elements, roles, bounds
   ├─ Candidate Builder  filter + rank + serialize to 5–20 typed candidates
-  ├─ Jev Decision Engine  one call, typed questions:
+  ├─ Jev / Laya Engine  one call, typed questions:
   │      • operation   Choice   (CLICK / TYPE / PRESS_KEY / SCROLL / WAIT / DONE / BLOCKED / …)
   │      • target      Choice   (candidate id or NONE)
   │      • continue    Noul     (more steps needed?)
   │      • safe        Noul     (safe & grounded to execute?)
-  ├─ Action Executor    real mouse / keyboard / scroll / drag (pynput, xdotool fallback)
+  ├─ Action Executor    real mouse / keyboard / scroll (xdotool, pynput fallback)
   └─ Verifier           re-observe and confirm the desktop actually changed
 ```
 
+The desktop observation and control come from a proven, generic
+computer-use engine (adapted from
+[`tak-uukti/linux-computer-use`](https://github.com/tak-uukti/linux-computer-use),
+MIT) — the **same** engine drives any accessible app, not per-application code.
+
+**Proof of work.** The whole observe → decide → act → verify loop is proven on a
+real app: `movo --selftest` launches gnome-calculator and computes `7 + 8`
+through Movo's own backend and candidate translation (a deterministic decider
+stands in for the model), then verifies the calculator's display reads `15`.
+`scripts/proof_of_work.py` is the same proof, verbose.
+
 Everything deterministic — visibility, enabled state, coordinate extraction,
 candidate filtering, retries, loop detection, emergency stop, destructive-action
-confirmation — is handled in code. Jev is only asked the semantic questions.
+confirmation — is handled in code. The decision model is only asked the
+semantic questions.
 
 ### Why this shape
 
@@ -59,7 +71,7 @@ confirmation — is handled in code. Jev is only asked the semantic questions.
 Download the `.deb` from a release (or build it — see below) and install:
 
 ```sh
-sudo apt install ./movo_0.2.1_all.deb
+sudo apt install ./movo_0.3.0_all.deb
 ```
 
 Then launch **Movo** from your app menu. On first run, open
@@ -181,7 +193,7 @@ packaging/deb/       Debian package tree + build/validate scripts
 
 ```sh
 bash packaging/build_deb.sh dist
-bash packaging/validate_deb.sh dist/movo_0.2.1_all.deb
+bash packaging/validate_deb.sh dist/movo_0.3.0_all.deb
 ```
 
 CI builds and validates the package on every push (`.github/workflows/build.yml`)
@@ -198,3 +210,12 @@ and attaches it to tagged releases (`release.yml`).
 ## License
 
 MIT — see [LICENSE](LICENSE).
+
+## Credits
+
+* The computer-use engine is adapted from
+  [`tak-uukti/linux-computer-use`](https://github.com/tak-uukti/linux-computer-use)
+  (MIT) — AT-SPI translation + xdotool/scrot, verified end-to-end on real apps.
+* **Laya** local model by [Convai Innovations](https://huggingface.co/convaiinnovations/laya)
+  (Apache-2.0); **Jev** System One API by [TypeSafe AI](https://docs.typesafe.ai).
+* Built on AT-SPI 2, xdotool, wmctrl, scrot, PySide6, and pynput/mss.

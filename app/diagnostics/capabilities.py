@@ -92,6 +92,22 @@ def _probe_window_detection(session: str) -> bool:
 
 def check_capabilities() -> Capabilities:
     session = _session_type()
+    # Prefer the proven engine's own capability report when it imports cleanly,
+    # since that is exactly what the agent will use to act.
+    try:
+        from app.desktop import lcu_engine as eng
+
+        caps = eng.capabilities()
+        return Capabilities(
+            session_type=session,
+            accessibility=bool(caps.get("atspi")),
+            screenshot=bool(caps.get("scrot") or caps.get("mss")),
+            mouse_input=bool(caps.get("input")),
+            keyboard_input=bool(caps.get("input")),
+            window_detection=bool(caps.get("wmctrl") or caps.get("atspi")),
+        )
+    except Exception:
+        pass
     accessibility = _probe_accessibility()
     screenshot = _probe_screenshot()
     inp = _probe_input()

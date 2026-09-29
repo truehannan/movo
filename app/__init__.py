@@ -15,4 +15,4 @@ Jev makes bounded typed decisions; application code owns the workflow and all
 side effects.
 """
 
-__version__ = "0.2.1"
+__version__ = "0.3.0"
