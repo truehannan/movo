@@ -41,9 +41,41 @@ class TaskController:
         self._confirmer = confirmer
         self._thread: threading.Thread | None = None
         self._client: JevClient | None = None
+        self._laya = None  # LayaRuntime, created lazily when provider is laya
 
     # --- connection ------------------------------------------------------
+    def _laya_runtime(self):
+        from app.jev.laya_runtime import LayaRuntime
+
+        if self._laya is None:
+            self._laya = LayaRuntime(
+                port=self._settings.laya_port,
+                checkpoint=self._settings.laya_checkpoint,
+            )
+        return self._laya
+
     def build_client(self) -> JevClient:
+        """Build the decision client for the configured provider.
+
+        For Jev this needs a stored API key. For Laya it points the SDK at the
+        local server (which must already be provisioned/running — the model
+        panel handles bring-up).
+        """
+        if self._settings.is_local:
+            from app.jev.client import LayaClient
+
+            rt = self._laya_runtime()
+            # Ensure the local server is up; provisioning (install+download) is
+            # driven from the UI, but starting an already-installed server here
+            # is cheap and keeps run_goal robust.
+            if not rt.is_running():
+                rt.start()
+            self._client = LayaClient(
+                base_url=self._settings.laya_base_url,
+                checkpoint=self._settings.laya_checkpoint,
+            )
+            return self._client
+
         key = self._secrets.get_api_key()
         if not key:
             raise RuntimeError("No API key configured")
@@ -52,6 +84,13 @@ class TaskController:
 
     def test_connection(self):
         return self.build_client().test_connection()
+
+    def laya_status(self):
+        return self._laya_runtime().status()
+
+    def provision_laya(self, progress=None) -> bool:
+        """Install + download + start the local Laya runtime (UI-driven)."""
+        return self._laya_runtime().provision_and_start(progress)
 
     # --- running ---------------------------------------------------------
     @property
@@ -100,4 +139,6 @@ class TaskController:
         self.stop()
         if self._client is not None:
             self._client.close()
+        if self._laya is not None:
+            self._laya.stop()
         self._backend.close()

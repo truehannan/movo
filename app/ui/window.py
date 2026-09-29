@@ -1,12 +1,18 @@
 """The frameless floating window (PROMPT sections 17, 19, 21, 22, 30).
 
-Owns the title bar, status dot, the stacked panel/settings/welcome views, the
-highlight overlay, and all wiring to :class:`TaskController`. Agent events
-arrive on a worker thread and are marshalled onto the UI thread via a Qt signal
-so widget updates are always thread-safe.
+Owns the title bar, status dot, the stacked views (welcome / panel / model /
+settings), the highlight overlay, the auto-update affordance, and all wiring to
+:class:`TaskController`. Agent events arrive on a worker thread and are
+marshalled onto the UI thread via Qt signals so widget updates stay thread-safe.
+
+Window shape (per product spec): a **wide, short, rounded** panel, horizontally
+centered and placed a little **above** the vertical center of the screen.
+Palette is near-pitch-black with white as the secondary/interface colour.
 """
 
 from __future__ import annotations
+
+import threading
 
 from PySide6.QtCore import QPoint, Qt, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
@@ -20,15 +26,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app import __version__
 from app.agent.controller import TaskController
 from app.agent.loop import AgentEvent, EventType, Outcome, TaskResult
 from app.config.secrets import SecretStore
 from app.config.settings import Settings
 from app.desktop.backend import Bounds, DesktopBackend
+from app.diagnostics import updater
 from app.diagnostics.capabilities import Capabilities
 from app.safety.confirmation import CallbackConfirmer
 from app.safety.emergency_stop import EmergencyStop
 from app.ui import styles
+from app.ui.model_view import ModelView
 from app.ui.overlay import HighlightOverlay
 from app.ui.panel import Panel
 from app.ui.resources import logo_path
@@ -36,7 +45,11 @@ from app.ui.settings import SettingsView
 
 _PAGE_WELCOME = 0
 _PAGE_PANEL = 1
-_PAGE_SETTINGS = 2
+_PAGE_MODEL = 2
+_PAGE_SETTINGS = 3
+
+_WIN_W = 720
+_WIN_H = 360
 
 
 class MainWindow(QWidget):
@@ -46,6 +59,10 @@ class MainWindow(QWidget):
     _finished_signal = Signal(object)
     _highlight_signal = Signal(object, int)
     _conn_signal = Signal(bool, str)
+    _laya_progress_signal = Signal(str)
+    _laya_done_signal = Signal(bool)
+    _update_signal = Signal(object)  # UpdateCheck
+    _update_progress_signal = Signal(str)
 
     def __init__(
         self,
@@ -61,6 +78,7 @@ class MainWindow(QWidget):
         self._caps = capabilities
         self._stop = EmergencyStop()
         self._drag_offset: QPoint | None = None
+        self._pending_release = None  # updater.ReleaseInfo when an update exists
 
         self._controller = TaskController(
             backend=backend,
@@ -80,15 +98,18 @@ class MainWindow(QWidget):
         self._wire_signals()
         self._install_shortcuts()
         self._route_first_view()
+        self._start_update_check()
 
     # --- construction ----------------------------------------------------
     def _build(self) -> None:
         self.setWindowFlags(
-            Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
-        self.setFixedWidth(380)
-        self.setMinimumHeight(420)
+        self.setFixedWidth(_WIN_W)
+        self.setMinimumHeight(_WIN_H)
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -105,21 +126,24 @@ class MainWindow(QWidget):
         self.stack = QStackedWidget()
         self.welcome = self._welcome_view()
         self.panel = Panel()
+        self.model_view = ModelView(self._settings, self._secrets)
         self.settings_view = SettingsView(self._settings, self._secrets)
-        self.stack.addWidget(self.welcome)       # 0
-        self.stack.addWidget(self.panel)         # 1
-        self.stack.addWidget(self.settings_view) # 2
+        self.stack.addWidget(self.welcome)        # 0
+        self.stack.addWidget(self.panel)          # 1
+        self.stack.addWidget(self.model_view)     # 2
+        self.stack.addWidget(self.settings_view)  # 3
         root_l.addWidget(self.stack, 1)
 
         self.setStyleSheet(styles.stylesheet())
-        self._position_bottom_right()
+        self._position_centered_above()
 
     def _title_bar(self) -> QWidget:
         bar = QWidget()
         bar.setObjectName("TitleBar")
-        bar.setFixedHeight(40)
+        bar.setFixedHeight(44)
         lay = QHBoxLayout(bar)
-        lay.setContentsMargins(14, 0, 8, 0)
+        lay.setContentsMargins(16, 0, 10, 0)
+        lay.setSpacing(8)
 
         self.status_dot = QLabel("●")
         self.status_dot.setObjectName("StatusDot")
@@ -131,10 +155,7 @@ class MainWindow(QWidget):
             from PySide6.QtGui import QPixmap
 
             pix = QPixmap(_logo_path).scaled(
-                20,
-                20,
-                Qt.AspectRatioMode.KeepAspectRatio,
-                Qt.TransformationMode.SmoothTransformation,
+                22, 22, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
             )
             logo.setPixmap(pix)
 
@@ -145,12 +166,24 @@ class MainWindow(QWidget):
         lay.addWidget(name)
         lay.addStretch(1)
 
+        # Update pill (hidden until an update is found).
+        self.update_pill = QPushButton("Update available")
+        self.update_pill.setObjectName("UpdatePill")
+        self.update_pill.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.update_pill.clicked.connect(self._on_update_clicked)
+        self.update_pill.hide()
+        lay.addWidget(self.update_pill)
+
+        self.model_btn = QPushButton("Model")
+        self.model_btn.setObjectName("Ghost")
+        self.model_btn.clicked.connect(lambda: self.stack.setCurrentIndex(_PAGE_MODEL))
         self.settings_btn = QPushButton("⚙")
         self.settings_btn.setObjectName("Ghost")
         self.settings_btn.clicked.connect(lambda: self.stack.setCurrentIndex(_PAGE_SETTINGS))
         close_btn = QPushButton("✕")
         close_btn.setObjectName("Ghost")
         close_btn.clicked.connect(self.close)
+        lay.addWidget(self.model_btn)
         lay.addWidget(self.settings_btn)
         lay.addWidget(close_btn)
 
@@ -161,10 +194,9 @@ class MainWindow(QWidget):
     def _welcome_view(self) -> QWidget:
         w = QWidget()
         lay = QVBoxLayout(w)
-        lay.setContentsMargins(20, 8, 20, 20)
-        lay.setSpacing(10)
+        lay.setContentsMargins(28, 10, 28, 22)
+        lay.setSpacing(8)
 
-        # Centered brand header: logo above the name.
         _logo_path = logo_path()
         if _logo_path:
             from PySide6.QtGui import QPixmap
@@ -172,14 +204,10 @@ class MainWindow(QWidget):
             brand = QLabel()
             brand.setPixmap(
                 QPixmap(_logo_path).scaled(
-                    64,
-                    64,
-                    Qt.AspectRatioMode.KeepAspectRatio,
-                    Qt.TransformationMode.SmoothTransformation,
+                    56, 56, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
                 )
             )
             brand.setAlignment(Qt.AlignmentFlag.AlignHCenter)
-            lay.addSpacing(8)
             lay.addWidget(brand)
 
         title = QLabel("Movo")
@@ -188,28 +216,32 @@ class MainWindow(QWidget):
         lay.addWidget(title)
         sub = QLabel("Control your Linux desktop with fast, typed AI decisions.")
         sub.setObjectName("Dim")
-        sub.setWordWrap(True)
         sub.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         lay.addWidget(sub)
 
-        # Capability diagnostics (PROMPT section 22).
+        # Capability check in a compact horizontal strip.
         lay.addSpacing(6)
-        caps_title = QLabel("System check")
-        caps_title.setObjectName("Faint")
-        lay.addWidget(caps_title)
+        caps_row = QHBoxLayout()
+        caps_row.setSpacing(14)
+        caps_row.addStretch(1)
         for label, ok in self._caps.as_rows():
-            row = QLabel(f"{'✓' if ok else '✕'}  {label}")
-            row.setStyleSheet(f"color: {styles.OK if ok else styles.ERR};")
-            lay.addWidget(row)
-        session = QLabel(f"session: {self._caps.session_type}")
-        session.setObjectName("Faint")
-        lay.addWidget(session)
+            chip = QLabel(f"{'✓' if ok else '✕'} {label}")
+            chip.setStyleSheet(
+                f"color: {styles.OK if ok else styles.ERR}; font-size: 12px;"
+            )
+            caps_row.addWidget(chip)
+        caps_row.addStretch(1)
+        lay.addLayout(caps_row)
 
         lay.addStretch(1)
-        btn = QPushButton("Set up API key  →")
-        btn.setObjectName("Primary")
-        btn.clicked.connect(lambda: self.stack.setCurrentIndex(_PAGE_SETTINGS))
-        lay.addWidget(btn)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        choose = QPushButton("Choose a model  →")
+        choose.setObjectName("Primary")
+        choose.clicked.connect(lambda: self.stack.setCurrentIndex(_PAGE_MODEL))
+        row.addWidget(choose)
+        row.addStretch(1)
+        lay.addLayout(row)
         return w
 
     # --- wiring ----------------------------------------------------------
@@ -220,30 +252,73 @@ class MainWindow(QWidget):
         self.settings_view.test_requested.connect(self._on_test_connection)
         self.settings_view.back.connect(self._route_first_view)
 
+        self.model_view.back.connect(self._route_first_view)
+        self.model_view.provider_chosen.connect(self._on_provider_chosen)
+        self.model_view.provision_laya_requested.connect(self._on_provision_laya)
+        self.model_view.save_key_requested.connect(self._on_save_key)
+        self.model_view.test_requested.connect(self._on_test_connection)
+
         self._event_signal.connect(self._handle_event)
         self._finished_signal.connect(self._handle_finished)
         self._highlight_signal.connect(self._on_highlight)
         self._conn_signal.connect(self._on_conn_result)
+        self._laya_progress_signal.connect(self.model_view.set_laya_status)
+        self._laya_done_signal.connect(self._on_laya_done)
+        self._update_signal.connect(self._on_update_result)
+        self._update_progress_signal.connect(self._on_update_progress)
 
     def _install_shortcuts(self) -> None:
-        # ESC = emergency stop (PROMPT section 21).
         stop_sc = QShortcut(QKeySequence(Qt.Key.Key_Escape), self)
         stop_sc.activated.connect(self._on_stop)
-        # Ctrl+Q closes.
         quit_sc = QShortcut(QKeySequence("Ctrl+Q"), self)
         quit_sc.activated.connect(self.close)
 
+    def _provider_ready(self) -> bool:
+        """Whether the configured provider is usable for a run."""
+        if self._settings.is_local:
+            return True  # the model panel provisions; run_goal starts if needed
+        return self._secrets.has_api_key()
+
     def _route_first_view(self) -> None:
-        if self._secrets.has_api_key():
+        # Reflect current Laya status on the model view whenever we route.
+        try:
+            self.model_view.reflect_laya_status(self._controller.laya_status())
+        except Exception:
+            pass
+        if self._provider_ready():
             self.stack.setCurrentIndex(_PAGE_PANEL)
             self._set_status("connected", "Ready")
         else:
             self.stack.setCurrentIndex(_PAGE_WELCOME)
 
+    # --- provider / model panel -----------------------------------------
+    def _on_provider_chosen(self, provider: str) -> None:
+        self._settings = Settings.load()
+        self._controller._settings = self._settings  # keep controller in sync
+        if provider == "laya":
+            self.model_view.reflect_laya_status(self._controller.laya_status())
+
+    def _on_provision_laya(self) -> None:
+        def worker() -> None:
+            ok = self._controller.provision_laya(
+                progress=lambda m: self._laya_progress_signal.emit(m)
+            )
+            self._laya_done_signal.emit(ok)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_laya_done(self, ok: bool) -> None:
+        self.model_view.set_laya_done(ok)
+        if ok:
+            self._set_status("connected", "Laya ready")
+
+    def _on_save_key(self, key: str) -> None:
+        self._secrets.set_api_key(key)
+
     # --- run/stop --------------------------------------------------------
     def _on_run(self, goal: str) -> None:
-        if not self._secrets.has_api_key():
-            self.stack.setCurrentIndex(_PAGE_SETTINGS)
+        if not self._provider_ready():
+            self.stack.setCurrentIndex(_PAGE_MODEL)
             return
         self.panel.set_running()
         self._set_status("running", "Running")
@@ -263,7 +338,7 @@ class MainWindow(QWidget):
     def _handle_event(self, event: AgentEvent) -> None:
         self.panel.set_step(event.step, self._settings.max_steps)
         if event.type is EventType.OBSERVED:
-            self.panel.set_current_action("Observing…", event.message[:60])
+            self.panel.set_current_action("Observing…", event.message[:70])
         elif event.type is EventType.DECIDED and event.decision is not None:
             d = event.decision
             ctx = f"{event.app_name}"
@@ -289,9 +364,7 @@ class MainWindow(QWidget):
     def _handle_finished(self, result: TaskResult) -> None:
         self.panel.set_idle()
         tel = result.telemetry
-        self.panel.set_telemetry(
-            tel.get("jev_calls", 0), tel.get("input_tokens", 0), 0.0
-        )
+        self.panel.set_telemetry(tel.get("jev_calls", 0), tel.get("input_tokens", 0), 0.0)
         color_key = {
             Outcome.DONE: "done",
             Outcome.BLOCKED: "blocked",
@@ -307,8 +380,6 @@ class MainWindow(QWidget):
 
     # --- connection test -------------------------------------------------
     def _on_test_connection(self) -> None:
-        import threading
-
         def worker() -> None:
             try:
                 res = self._controller.test_connection()
@@ -319,24 +390,61 @@ class MainWindow(QWidget):
         threading.Thread(target=worker, daemon=True).start()
 
     def _on_conn_result(self, ok: bool, detail: str) -> None:
+        target = self.model_view if self.stack.currentIndex() == _PAGE_MODEL else self.settings_view
         if ok:
-            self.settings_view.set_status(f"Jev connected · {detail}", styles.OK)
+            target.set_status(f"Connected · {detail}", styles.OK)
             self._set_status("connected", "Connected")
         else:
-            self.settings_view.set_status(f"Connection failed: {detail}", styles.ERR)
+            target.set_status(f"Connection failed: {detail}", styles.ERR)
 
     def _on_settings_saved(self) -> None:
         self._settings = Settings.load()
+        self._controller._settings = self._settings
         self._route_first_view()
 
-    # --- destructive confirmation (called from worker thread) -----------
+    # --- auto-update -----------------------------------------------------
+    def _start_update_check(self) -> None:
+        def worker() -> None:
+            check = updater.check_for_update(__version__)
+            self._update_signal.emit(check)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_update_result(self, check) -> None:
+        if check.update_available and check.latest is not None:
+            self._pending_release = check.latest
+            self.update_pill.setText(f"Update {check.latest.version} →")
+            self.update_pill.show()
+
+    def _on_update_clicked(self) -> None:
+        rel = self._pending_release
+        if rel is None:
+            return
+        if not rel.has_asset:
+            QMessageBox.information(
+                self, "Update", f"Release {rel.version} is available at:\n{rel.html_url}"
+            )
+            return
+        self.update_pill.setText("Updating…")
+        self.update_pill.setEnabled(False)
+
+        def worker() -> None:
+            ok = updater.download_and_install(
+                rel, progress=lambda m: self._update_progress_signal.emit(m)
+            )
+            self._update_progress_signal.emit(
+                "Update installed — restart Movo." if ok else "Update failed."
+            )
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_update_progress(self, message: str) -> None:
+        self.status_dot.setToolTip(message)
+        self.update_pill.setText(message[:22])
+
+    # --- destructive confirmation (worker thread) -----------------------
     def _confirm_destructive(self, description: str, reason: str) -> bool:
-        # QMessageBox must run on the UI thread; block the worker until answered.
-        from PySide6.QtCore import QMetaObject, Qt as _Qt, Q_ARG  # noqa
-
         result: dict = {}
-        import threading
-
         done = threading.Event()
 
         def ask() -> None:
@@ -371,13 +479,20 @@ class MainWindow(QWidget):
         if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
             self.move(event.globalPosition().toPoint() - self._drag_offset)
 
-    def _position_bottom_right(self) -> None:
+    def _position_centered_above(self) -> None:
+        """Horizontally centered, a little above the vertical center."""
         screen = QGuiApplication.primaryScreen()
         if screen is None:
             return
         geo = screen.availableGeometry()
         self.adjustSize()
-        self.move(geo.right() - self.width() - 24, geo.bottom() - self.height() - 24)
+        x = geo.left() + (geo.width() - self.width()) // 2
+        # Vertical: between the top and the center — ~30% down from the top,
+        # which reads as "higher than screen, lower than the centre point".
+        center_y = geo.top() + geo.height() // 2
+        y = geo.top() + int(geo.height() * 0.30)
+        y = min(y, center_y - self.height() // 2)
+        self.move(x, max(geo.top() + 20, y))
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         self._controller.shutdown()

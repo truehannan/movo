@@ -36,7 +36,13 @@ class ConfidenceThresholds:
 class Settings:
     """User-configurable, non-secret settings."""
 
+    # Which decision provider to use: "jev" (hosted TypeSafe API) or "laya"
+    # (open-weight model running locally on this machine).
+    provider: str = "jev"
     model: str = "jev-latest"
+    # Laya local runtime settings.
+    laya_checkpoint: str = "laya"  # laya | laya-multilingual | laya-typed-decisions
+    laya_port: int = 8731
     max_steps: int = 25
     max_retries_per_action: int = 2
     action_timeout_s: float = 8.0
@@ -46,6 +52,14 @@ class Settings:
     debug_logging: bool = False
     prefer_keyring: bool = True
     thresholds: ConfidenceThresholds = field(default_factory=ConfidenceThresholds)
+
+    @property
+    def is_local(self) -> bool:
+        return self.provider == "laya"
+
+    @property
+    def laya_base_url(self) -> str:
+        return f"http://127.0.0.1:{self.laya_port}"
 
     # --- persistence -----------------------------------------------------
     @classmethod

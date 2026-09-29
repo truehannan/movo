@@ -97,7 +97,7 @@ class Panel(QWidget):
         hist_label.setObjectName("Faint")
         root.addWidget(hist_label)
         self.history = QListWidget()
-        self.history.setMinimumHeight(120)
+        self.history.setMinimumHeight(96)
         root.addWidget(self.history, 1)
 
         # Understated telemetry footer.

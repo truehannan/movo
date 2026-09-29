@@ -47,18 +47,25 @@ class JevConnectionResult:
 class JevClient:
     """Adapter over ``typesafe_sdk.TypeSafeClient``.
 
-    The API key is read by the SDK from ``TYPESAFE_API_KEY``; this wrapper sets
-    that env var from the secret store at construction and never logs it.
+    The same SDK speaks to the hosted Jev API or to a local Laya server (which
+    implements the identical ``/v1/systemone`` wire contract): only ``base_url``
+    changes. The API key is passed to the SDK directly and never logged.
     """
 
-    def __init__(self, api_key: str, model: str = "jev-latest") -> None:
-        import os
-
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "jev-latest",
+        base_url: str | None = None,
+    ) -> None:
         from typesafe_sdk import TypeSafeClient  # type: ignore
 
-        os.environ["TYPESAFE_API_KEY"] = api_key
         self._model = model
-        self._client = TypeSafeClient(model=model)
+        self._base_url = base_url
+        kwargs: dict[str, Any] = {"api_key": api_key, "model": model}
+        if base_url:
+            kwargs["base_url"] = base_url
+        self._client = TypeSafeClient(**kwargs)
 
     @property
     def model(self) -> str:
@@ -84,6 +91,18 @@ class JevClient:
             self._client.close()
         except Exception:
             pass
+
+
+class LayaClient(JevClient):
+    """A :class:`JevClient` pointed at a locally-running Laya server.
+
+    Laya's server implements TypeSafe's exact wire API, so this reuses the whole
+    decision path — only the base URL and a dummy key differ. No key leaves the
+    machine and no network call is made beyond localhost.
+    """
+
+    def __init__(self, base_url: str, checkpoint: str = "laya") -> None:
+        super().__init__(api_key="local", model=checkpoint, base_url=base_url)
 
 
 def _answer_value(container: dict, key: str, attr: str, default=None):

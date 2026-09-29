@@ -59,7 +59,7 @@ confirmation — is handled in code. Jev is only asked the semantic questions.
 Download the `.deb` from a release (or build it — see below) and install:
 
 ```sh
-sudo apt install ./movo_0.1.0_all.deb
+sudo apt install ./movo_0.2.0_all.deb
 ```
 
 Then launch **Movo** from your app menu. On first run, open
@@ -84,6 +84,30 @@ Get a key and free credit at <https://console.typesafe.ai/keys>.
 * AT-SPI accessibility enabled (`at-spi2-core`, `python3-gi`, `gir1.2-atspi-2.0`)
 * Internet access on first launch for the isolated virtualenv
   (`PySide6`, `typesafe-sdk`, `mss`, `pynput`).
+
+## Models
+
+Open **Model** in the title bar and choose your decision provider:
+
+* **Jev** (cloud) — TypeSafe's hosted System One model. Fast and calibrated;
+  needs an API key. Get one at <https://console.typesafe.ai/keys>.
+* **Laya** (local) — an open-weight System One model that runs entirely on your
+  machine. Private, no key, works offline. Choosing Laya installs a small local
+  runtime and downloads the model (~850 MB, one time) into the shared Hugging
+  Face cache, then serves it on `127.0.0.1` behind the same wire API — so the
+  agent loop is identical for both providers.
+
+Movo keeps the decision space small (a handful of typed candidates and
+operations per step), which suits Laya's strengths and avoids its known weak
+spot with many-label choices.
+
+## Updates
+
+Movo checks the GitHub Releases feed on launch. When a newer release exists, an
+**Update** pill appears in the title bar; one click downloads that release's
+`.deb` and installs it with a graphical permission prompt (`pkexec apt install`),
+replacing the old version in place. The downloaded file is removed afterward, so
+nothing is left behind.
 
 ## Usage
 
@@ -138,7 +162,7 @@ packaging/deb/       Debian package tree + build/validate scripts
 
 ```sh
 bash packaging/build_deb.sh dist
-bash packaging/validate_deb.sh dist/movo_0.1.0_all.deb
+bash packaging/validate_deb.sh dist/movo_0.2.0_all.deb
 ```
 
 CI builds and validates the package on every push (`.github/workflows/build.yml`)
