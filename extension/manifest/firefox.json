@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Jev Agent",
+  "version": "0.1.0",
+  "description": "A browser agent that operates the current page, powered by Jev typed decisions.",
+  "permissions": ["tabs", "storage"],
+  "background": { "scripts": ["background.js"] },
+  "sidebar_action": {
+    "default_title": "Jev Agent",
+    "default_panel": "index.html",
+    "default_icon": "icon128.png"
+  },
+  "commands": {
+    "_execute_sidebar_action": {
+      "suggested_key": { "default": "Ctrl+Shift+J", "mac": "Command+Shift+J" },
+      "description": "Open the Jev Agent sidebar"
+    }
+  },
+  "browser_specific_settings": {
+    "gecko": { "id": "jev-agent@movo.local", "strict_min_version": "121.0" }
+  },
+  "icons": { "128": "icon128.png" }
+}

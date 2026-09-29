@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Jev Agent",
+  "version": "0.1.0",
+  "description": "A browser agent that operates the current page, powered by Jev typed decisions.",
+  "minimum_chrome_version": "114",
+  "permissions": ["sidePanel", "tabs", "storage"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "side_panel": { "default_path": "index.html" },
+  "action": { "default_title": "Open Jev Agent" },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Ctrl+Shift+J", "mac": "Command+Shift+J" },
+      "description": "Open the Jev Agent side panel"
+    }
+  },
+  "icons": { "128": "icon128.png" }
+}

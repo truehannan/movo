@@ -1,0 +1,61 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  agent:
+    name: Agent (Python)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Ruff
+        run: ruff check agent tests scripts
+      - name: Pytest
+        run: pytest -q
+
+  extension:
+    name: Extension (TypeScript)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install
+        run: npm ci || npm install
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+      - name: Build both targets
+        run: |
+          node scripts/build-extension.mjs chrome
+          node scripts/build-extension.mjs firefox
+      - name: Validate manifests
+        run: |
+          python -c "import json,sys; m=json.load(open('extension/dist/chromium/manifest.json')); assert m['manifest_version']==3 and 'side_panel' in m, 'bad chromium manifest'"
+          python -c "import json,sys; m=json.load(open('extension/dist/firefox/manifest.json')); assert m['manifest_version']==3 and 'sidebar_action' in m, 'bad firefox manifest'"
+      - name: Package
+        run: |
+          sudo apt-get update && sudo apt-get install -y zip
+          node scripts/package-chrome.mjs
+          node scripts/package-firefox.mjs
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: extensions
+          path: |
+            dist/chrome/extension.zip
+            dist/firefox/extension.xpi
+          if-no-files-found: error

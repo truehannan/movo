@@ -1,221 +1,205 @@
-<p align="center">
-  <img src="public/movo.png" alt="Movo" width="120" />
-</p>
+# Jev Browser Agent
 
-<h1 align="center">Movo</h1>
+A **Chromium + Firefox side-panel browser agent** powered by TypeSafe's **Jev**
+System-One decision model. You type a natural-language goal for the current page;
+the agent reads the page, asks Jev for **one operation + one target** at a time,
+executes it, verifies, and repeats — until the goal is done, blocked, or stopped.
 
-<p align="center">
-  A compact, floating <strong>Linux desktop computer-use agent</strong> powered by
-  <a href="https://docs.typesafe.ai">TypeSafe AI's <strong>Jev</strong> System One decision model</a>.
-</p>
-
-Jev is not a chatbot and this is not a "screenshot → giant prompt → instructions"
-agent. Jev makes **bounded, typed decisions** with calibrated confidence, and
-ordinary application code owns the workflow, the side effects, and the safety:
+It is built on the proven `browser-use/jev-ultrafast` decision architecture:
 
 ```
-desktop → observation → structured state → candidate generation
-       → Jev typed decision → executor → verification → next observation
+goal → observe page → indexed interactive elements → Jev (operation + target)
+     → execute → verify/wait → observe again → next single action → …
 ```
 
-> Jev is the fast decision-making brain; this software gives it eyes, hands, a
-> memory of the current task, and safety.
+Jev is the fast System-1 decision layer. It never receives the whole DOM, giant
+histories, or screenshots, and it never generates selectors, JavaScript,
+coordinates, or a full plan. The runtime holds the goal and repeatedly gives Jev
+only the current page's indexed elements.
 
-## How it works
+## Architecture
 
 ```
-USER
-  ↓  floating PySide6 panel
-Task Controller  →  Planner (goal → text/key arguments, no Jev)
-  ↓
-Agent Loop:  observe → decide → act → verify
-  │
-  ├─ Desktop Observer   proven AT-SPI engine → windows, elements, roles, bounds
-  ├─ Candidate Builder  filter + rank + serialize to 5–20 typed candidates
-  ├─ Jev / Laya Engine  one call, typed questions:
-  │      • operation   Choice   (CLICK / TYPE / PRESS_KEY / SCROLL / WAIT / DONE / BLOCKED / …)
-  │      • target      Choice   (candidate id or NONE)
-  │      • continue    Noul     (more steps needed?)
-  │      • safe        Noul     (safe & grounded to execute?)
-  ├─ Action Executor    real mouse / keyboard / scroll (xdotool, pynput fallback)
-  └─ Verifier           re-observe and confirm the desktop actually changed
+Browser Extension  (Chrome side panel / Firefox sidebar, shared React UI)
+        │  loopback WebSocket + HTTP, token-authenticated
+        ▼
+Local Agent Service  (FastAPI, 127.0.0.1 only)
+        │
+        ├── Jev decision engine   one operation + per-operation target per cycle
+        ├── Text helper model      generates the string for TYPE_TEXT (separate)
+        ├── Browser control (CDP)  snapshot.js observation + guarded execution
+        ├── Verification           independent of the model's DONE
+        └── Safety policy          consequential actions require confirmation
 ```
 
-The desktop observation and control come from a proven, generic
-computer-use engine (adapted from
-[`tak-uukti/linux-computer-use`](https://github.com/tak-uukti/linux-computer-use),
-MIT) — the **same** engine drives any accessible app, not per-application code.
+Secrets (Jev key, text-model key) live **only** in the local service, never in
+the extension. The extension is treated as an untrusted client: every call
+carries a per-run token and an allowed origin, and the service binds loopback.
 
-**Proof of work.** The whole observe → decide → act → verify loop is proven on a
-real app: `movo --selftest` launches gnome-calculator and computes `7 + 8`
-through Movo's own backend and candidate translation (a deterministic decider
-stands in for the model), then verifies the calculator's display reads `15`.
-`scripts/proof_of_work.py` is the same proof, verbose.
+## Why Jev
 
-Everything deterministic — visibility, enabled state, coordinate extraction,
-candidate filtering, retries, loop detection, emergency stop, destructive-action
-confirmation — is handled in code. The decision model is only asked the
-semantic questions.
+Jev returns typed, calibrated decisions in ~100 ms instead of generating text.
+Selecting "which operation, which element" from a bounded, indexed action space
+is exactly a System-One decision, so the loop stays fast and cheap. (Benchmark
+figures belong to upstream Jev/`jev-ultrafast`; this project makes no universal
+performance claim of its own.)
 
-### Why this shape
+## Browser support
 
-* **One Jev call per step** carries several typed questions evaluated in
-  parallel (operation, target, continue, safe), keeping latency and tokens low.
-* **Compact state**: goal, current app/window, a serialized candidate block, and
-  a short recent-action history — hundreds of tokens, not thousands.
-* **The candidate id is the bridge**: Jev can only pick an id the local builder
-  produced, so it can never hallucinate a target or generate coordinates.
+* **Chromium** (Chrome, Chromium, and compatible) — Manifest V3, `sidePanel`.
+* **Firefox** — Manifest V3, `sidebar_action`.
 
-## Install
+Both present a **persistent side panel/sidebar**, never a popup. X11/Wayland is
+irrelevant here — this drives the browser page, not the OS.
 
-Download the `.deb` from a release (or build it — see below) and install:
+## Install (from a release)
 
-```sh
-sudo apt install ./movo_0.3.0_all.deb
+Download the artifacts from a GitHub Release:
+
+* `extension.zip` — Chrome/Chromium
+* `extension.xpi` — Firefox
+
+### Chrome / Chromium
+
+1. Unzip `extension.zip`.
+2. Open `chrome://extensions` → enable **Developer mode** → **Load unpacked** →
+   select the unzipped folder.
+3. Click the toolbar icon (or `Ctrl+Shift+J`) to open the side panel.
+
+### Firefox
+
+1. Open `about:debugging` → **This Firefox** → **Load Temporary Add-on** → select
+   `extension.xpi` (or the `manifest.json` inside the built folder).
+2. Open the sidebar (`Ctrl+Shift+J`), or View → Sidebar → Jev Agent.
+
+## Local backend setup
+
+The agent service runs on your machine and holds the API keys.
+
+```bash
+git clone https://github.com/truehannan/movo
+cd movo
+
+python -m venv .venv && . .venv/bin/activate
+pip install -e ".[dev]"
+
+cp .env.example .env      # fill in your keys (see below)
+jev-agent                 # or: python -m agent.main
 ```
 
-Then launch **Movo** from your app menu. On first run, open
-Settings, paste your TypeSafe/Jev API key, and click **Test Connection**.
+On start it prints a URL and a **request token**. Paste both into the
+extension's Settings to connect.
 
-Get a key and free credit at <https://console.typesafe.ai/keys>.
+To control a real page, run Chrome with remote debugging so the service can
+attach over CDP:
 
-> **First launch** downloads the Python UI/runtime dependencies (PySide6,
-> typesafe-sdk, mss, pynput) into a per-user virtualenv at
-> `~/.local/share/movo/venv`. This is done on first run — *not* during
-> `apt install` — so the package manager never blocks on a network download,
-> and it needs **no sudo** (it installs into your home, not the system path).
-> If you are offline on first run, install them later with:
->
-> ```sh
-> movo --setup
-> ```
-
-### Requirements
-
-* Linux with an **X11** session (Wayland support depends on the backend)
-* AT-SPI accessibility enabled (`at-spi2-core`, `python3-gi`, `gir1.2-atspi-2.0`)
-* Internet access on first launch for the isolated virtualenv
-  (`PySide6`, `typesafe-sdk`, `mss`, `pynput`).
-
-## Models
-
-Open **Model** in the title bar and choose your decision provider:
-
-* **Jev** (cloud) — TypeSafe's hosted System One model. Fast and calibrated;
-  needs an API key. Get one at <https://console.typesafe.ai/keys>.
-* **Laya** (local) — an open-weight System One model that runs entirely on your
-  machine. Private, no key, works offline. Choosing Laya installs a small local
-  runtime and downloads the model (~850 MB, one time) into the shared Hugging
-  Face cache, then serves it on `127.0.0.1` behind the same wire API — so the
-  agent loop is identical for both providers.
-
-Movo keeps the decision space small (a handful of typed candidates and
-operations per step), which suits Laya's strengths and avoids its known weak
-spot with many-label choices.
-
-Setting up Laya installs the `laya[serve]` package into Movo's per-user
-virtualenv and downloads the checkpoint on first use. The **Set up Laya locally**
-button streams the real install/download output into an in-app log (**Show
-logs**), and **Open in terminal** runs the same setup in a terminal window with
-live output. From the command line you can also run:
-
-```sh
-movo --laya-setup
+```bash
+google-chrome --remote-debugging-port=9222
 ```
 
-## The window (Dynamic Island)
+## API keys
 
-Movo lives as a **Dynamic Island** pinned to the top-center of the screen. It is
-non-movable and stays out of the way: it retracts to a thin sliver at the top
-edge, and **drops down with a bounce when you move the pointer to the top of the
-screen** (or onto the island). It retracts again when the pointer leaves —
-unless you are typing a task or a run is in progress, in which case it stays
-open.
+Set these in `.env` (used only by the local service — never in the extension):
 
-## Updates
+```
+TYPESAFE_API_KEY=      # Jev decision model (get one at console.typesafe.ai/keys)
+TEXT_MODEL_API_KEY=    # OpenAI-compatible model for TYPE_TEXT values
+TEXT_MODEL=
+TEXT_MODEL_BASE_URL=
+AGENT_HOST=127.0.0.1
+AGENT_PORT=8766
+```
 
-Movo checks the GitHub Releases feed on launch. When a newer release exists, an
-**Update** pill appears in the title bar; one click downloads that release's
-`.deb` and installs it with a graphical permission prompt (`pkexec apt install`),
-replacing the old version in place. The downloaded file is removed afterward, so
-nothing is left behind.
-
-## Usage
-
-Type a natural-language goal, for example:
-
-* `Open Firefox and search for "Python 3.14"`
-* `Open GitHub and find the Issues section`
-* `Create a folder called Hackathon`
-* `Open my project and find the README`
-
-Watch the panel show each step: the observed app, Jev's chosen operation and
-target, its confidence, a transient highlight over the real element, and a
-`✓ VERIFIED` once the desktop changes.
-
-**Safety**: press **Esc** at any time for an emergency stop, or click **Stop**.
-Destructive actions (delete, shutdown, `sudo`, `rm -rf`, payments, …) are never
-executed automatically — they require explicit confirmation.
+To run Jev locally instead of the cloud, point `TYPESAFE_BASE_URL` at a local
+Laya server (same wire API).
 
 ## Development
 
-```sh
-python3 -m venv --system-site-packages .venv   # system-site for python3-gi (AT-SPI)
-. .venv/bin/activate
-pip install -e ".[dev]"
-pip install PySide6-Essentials                  # for the UI
+```bash
+npm install
+npm run dev            # Vite dev server for the panel UI
+npm run typecheck
+npm test               # vitest (extension)
 
-pytest -q            # deterministic tests: no real desktop, no network
-ruff check app tests
+pytest -q              # agent tests (deterministic, no browser/network)
+ruff check agent tests scripts
 ```
 
-The agent loop is fully testable without a real desktop or network: a
-`MockDesktopBackend` scripts observations and a scripted Jev client returns
-canned typed answers. See `tests/`.
+Prove the loop without a browser or key:
 
-### Layout
-
-```
-app/
-  main.py            entry point
-  ui/                window, panel, settings, overlay, styles  (PySide6)
-  agent/             controller, planner, loop, verifier, history
-  jev/               client, questions, schemas  (typesafe-sdk)
-  desktop/           backend interface, x11_backend, candidates, mock_backend
-  safety/            policy, confirmation, emergency_stop
-  config/            settings, secrets  (keyring / restricted file)
-  diagnostics/       capabilities, logging
-packaging/deb/       Debian package tree + build/validate scripts
-.github/workflows/   build.yml (test + package), release.yml
+```bash
+PYTHONPATH=. python scripts/proof_of_work.py
 ```
 
-## Build the `.deb`
+It runs the real observe→decide→act→verify loop against a scripted page with a
+deterministic decider standing in for Jev, and verifies success independently.
 
-```sh
-bash packaging/build_deb.sh dist
-bash packaging/validate_deb.sh dist/movo_0.3.0_all.deb
+## Testing
+
+* **Unit** (`tests/agent`, `tests/protocol`): decision parsing, dynamic target
+  filtering, stale-target rejection, safety policy, verification, task limits,
+  text validation, the API protocol, and manifest generation.
+* **Browser** (`tests/browser`, `tests/pages`): snapshot translation and a full
+  multi-step loop against a deterministic local test page.
+* **Extension** (`tests/extension`): the API client, token auth, and reconnection.
+
+## Building & packaging
+
+```bash
+node scripts/build-extension.mjs chrome
+node scripts/build-extension.mjs firefox
+node scripts/package-chrome.mjs     # -> dist/chrome/extension.zip
+node scripts/package-firefox.mjs    # -> dist/firefox/extension.xpi
 ```
 
-CI builds and validates the package on every push (`.github/workflows/build.yml`)
-and attaches it to tagged releases (`release.yml`).
+## GitHub Actions
 
-## Security & privacy
+* **ci.yml** — on every push/PR: Python lint + tests, TypeScript typecheck +
+  tests, build both extensions, validate both manifests, package, upload
+  artifacts.
+* **release.yml** — on a `v*` tag: run everything, build/package both
+  extensions, and attach `extension.zip` + `extension.xpi` to a GitHub Release.
+  There is **no store auto-publish** — download the artifacts and upload them to
+  the Chrome Web Store / Firefox Add-ons yourself.
 
-* The API key is stored via the OS keyring when available, otherwise in a
-  `0600` file under `~/.config/movo/`. It is **never** logged — a
-  redacting log filter is a defence-in-depth backstop.
-* Screenshots are used only for the visual overlay/debugging and are **never**
-  sent to Jev. Jev receives compact structured state only.
+Cut a release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+## Required GitHub secrets
+
+None for building or releasing — the release only attaches the packaged files.
+The runtime keys (`TYPESAFE_API_KEY`, `TEXT_MODEL_API_KEY`) belong in your local
+`.env`, not in CI or the extension.
+
+## Security model
+
+* API secrets stay server-side; the extension never sees them.
+* The service binds `127.0.0.1` by default and checks Host/Origin plus a random
+  per-run token on every request.
+* Consequential actions (buy, delete, send, submit, …) pause for confirmation.
+* Stale targets are rejected: a mutation is never executed against a page that
+  changed since the decision was made, and mutations are never blindly retried.
+* The model never emits JavaScript, shell, selectors, or coordinates — only a
+  bounded operation, an element index, and (for TYPE_TEXT) a validated string.
+* `DONE` is not trusted; task success is verified independently.
+
+## Known limitations
+
+* Needs the local agent service running, and Chrome started with
+  `--remote-debugging-port` for real-page control.
+* Shadow DOM, cross-origin frames, canvas, uploads, and complex keyboard
+  interactions can block progress.
+* Element naming covers common labels/ARIA/text, not the browser's full
+  accessibility algorithm.
+* A valid action can still be the wrong action; independent verification, not the
+  model's confidence, decides success.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
-
-## Credits
-
-* The computer-use engine is adapted from
-  [`tak-uukti/linux-computer-use`](https://github.com/tak-uukti/linux-computer-use)
-  (MIT) — AT-SPI translation + xdotool/scrot, verified end-to-end on real apps.
-* **Laya** local model by [Convai Innovations](https://huggingface.co/convaiinnovations/laya)
-  (Apache-2.0); **Jev** System One API by [TypeSafe AI](https://docs.typesafe.ai).
-* Built on AT-SPI 2, xdotool, wmctrl, scrot, PySide6, and pynput/mss.
+MIT — see [LICENSE](LICENSE). Decision architecture follows
+[`browser-use/jev-ultrafast`](https://github.com/browser-use/jev-ultrafast).
+Jev by [TypeSafe AI](https://docs.typesafe.ai).

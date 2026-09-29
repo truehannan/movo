@@ -11,48 +11,56 @@ permissions:
 
 jobs:
   release:
-    name: Build & attach .deb to release
+    name: Build, package, attach artifacts
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y dpkg-dev lintian python3-gi gir1.2-atspi-2.0 at-spi2-core
           python -m pip install --upgrade pip
-          pip install typesafe-sdk mss pynput pytest ruff
+          pip install -e ".[dev]"
+          npm ci || npm install
+          sudo apt-get update && sudo apt-get install -y zip
 
-      - name: Test
+      - name: Test & typecheck
         run: |
-          ruff check app tests
+          ruff check agent tests scripts
           pytest -q
+          npm run typecheck
+          npm test
 
-      - name: Build .deb
-        run: bash packaging/build_deb.sh dist
+      - name: Build & package both extensions
+        run: |
+          node scripts/build-extension.mjs chrome
+          node scripts/build-extension.mjs firefox
+          node scripts/package-chrome.mjs
+          node scripts/package-firefox.mjs
 
-      - name: Validate .deb
-        run: bash packaging/validate_deb.sh dist/movo_0.3.0_all.deb
-
-      # Only create a GitHub Release when this run was triggered by a v* tag.
-      # softprops/action-gh-release requires a tag, so guarding it lets manual
-      # (workflow_dispatch) runs succeed and just publish an artifact instead.
-      - name: Create release and upload .deb
+      # Create the GitHub Release with the uploadable extension files attached
+      # (Chrome .zip + Firefox .xpi). No store auto-publish — download and upload
+      # to the stores yourself.
+      - name: Create release with artifacts
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.deb
+          files: |
+            dist/chrome/extension.zip
+            dist/firefox/extension.xpi
           generate_release_notes: true
 
-      # For manual runs (no tag), expose the .deb as a downloadable artifact.
-      - name: Upload artifact (manual runs)
+      - name: Upload artifacts (manual runs)
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
         with:
-          name: movo-deb
-          path: dist/*.deb
+          name: extensions
+          path: |
+            dist/chrome/extension.zip
+            dist/firefox/extension.xpi
           if-no-files-found: error

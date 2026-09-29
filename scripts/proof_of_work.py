@@ -1,92 +1,92 @@
 #!/usr/bin/env python3
-"""Proof of work: the REAL agent loop drives gnome-calculator.
+"""Proof of work: the real agent loop drives a scripted search page.
 
-This does not hand-code clicks. It runs Movo's actual pipeline —
-observe (proven AT-SPI translation) -> build candidates -> a decider picks a
-candidate by its translated name -> execute -> re-observe -> verify — and checks
-the calculator's own display reaches 15 after "7 + 8 =".
+No UI, no network. It runs the actual AgentRuntime — observe → Jev decision
+(operation + per-operation target) → text helper (for TYPE_TEXT) → guarded
+execute (stale-checked) → verify — against a FakeBrowserSession modelling a
+search page:
 
-The decider here is a deterministic stand-in for the model (no API key needed):
-it selects the candidate whose translated name matches the next token. This
-proves the translate->decide->act->verify plumbing end-to-end; swapping in Jev
-or Laya changes only who picks the candidate id.
+  page 0: a search textbox [0] + a Search button [1]
+  page 1 (after search submitted): results incl. a result link
+
+Jev is scripted (deterministic stand-in for the model): TYPE_TEXT→[0],
+CLICK→[1] (search), then DONE. The text helper returns a fixed query. Success is
+verified independently: the results page must actually show a result.
 
 Run:  PYTHONPATH=. python scripts/proof_of_work.py
 """
 
 from __future__ import annotations
 
-import subprocess
 import sys
-import time
 
-from app.desktop import lcu_engine as eng
-from app.desktop.candidates import build_candidates, serialize_candidates
-from app.desktop.lcu_backend import LcuBackend
+from agent.browser.browser import FakeBrowserSession
+from agent.core.agent import AgentRuntime
+from agent.core.state import Element
+from agent.core.task import TaskContext
+from agent.model.jev import DecisionEngine
+from agent.model.text import TextHelper
+
+sys.path.insert(0, ".")
+from tests.mock_jev import ScriptedJevClient, response  # noqa: E402
 
 
-def _display(backend) -> str:
-    obs = backend.get_ui_tree()
-    # gnome-calculator exposes the result as an editable/text element; also scan
-    # names for a numeric readout.
-    vals = [e.value for e in obs.elements if e.value]
-    return " | ".join(v for v in vals if v)
+def build_pages():
+    search_box = Element(index=0, role="textbox", name="Search", value="", editable=True, can_type=True)
+    search_btn = Element(index=1, role="button", name="Search", can_click=True)
+    home = ("https://example.com", "Example Search", [search_box, search_btn])
+
+    result = Element(index=2, role="link", name="OpenAI - Wikipedia", can_click=True)
+    results = ("https://example.com/results?q=OpenAI", "OpenAI - results", [result])
+    return [home, results]
+
+
+def transition(action, element, current_index):
+    # Submitting the search (clicking the Search button) advances to results.
+    if action == "click" and element is not None and element.role == "button":
+        return 1
+    return current_index
+
+
+class FixedText:
+    def complete(self, system, user):
+        return '{"text": "OpenAI"}'
+
+
+def verify_goal(observation, goal) -> bool:
+    # Independent verification: results are visible (a result link present).
+    return any(e.role == "link" for e in observation.elements)
 
 
 def main() -> int:
-    print("== Movo proof of work — REAL translate→decide→act loop ==\n")
-    print("engine capabilities:", eng.capabilities(), "\n")
+    print("== Jev browser-agent proof of work — real observe→decide→act→verify ==\n")
+    browser = FakeBrowserSession(build_pages(), transition=transition)
+    jev = ScriptedJevClient([
+        response("TYPE_TEXT", {"target_type": 0}),   # type the query into [0]
+        response("CLICK", {"target_click": 1}),        # click Search [1]
+        response("DONE"),                               # then done
+    ])
+    engine = DecisionEngine(jev)
+    text = TextHelper(FixedText())
 
-    proc = subprocess.Popen(["gnome-calculator"])
-    time.sleep(3.5)
+    events = []
+    runtime = AgentRuntime(browser, engine, text_helper=text, on_event=events.append, sleep=lambda s: None)
+    task = TaskContext(goal='Search for "OpenAI" and open the result', max_steps=15)
 
-    backend = LcuBackend()
-    backend.screenshot("/tmp/movo_pow_before.png")
+    result = runtime.run(task, verify_goal=verify_goal)
 
-    obs = backend.get_ui_tree()
-    cands = build_candidates(obs, max_candidates=60)
-    print(f"[observe] window={obs.window.title!r} elements={len(obs.elements)} "
-          f"candidates={len(cands)}")
-    print("[translate] candidate block the model would receive:")
-    print("  " + serialize_candidates(cands)[:600].replace("\n", "\n  "))
+    print("goal:", task.goal)
+    print("\nactivity:")
+    for e in events:
+        line = e.message or e.type.value
+        print(f"  [{e.type.value}] {line}")
+    print("\nbrowser actions issued:", browser.actions)
+    print("final status:", result.status.value)
 
-    # The sequence a decision model would choose, one token per step.
-    plan = ["7", "+", "8", "="]
-
-    def decide(cands, token):
-        """Stand-in decider: pick the candidate whose translated name == token."""
-        for c in cands:
-            if c.name.strip() == token:
-                return c
-        return None
-
-    print("\n[loop] goal = compute 7 + 8 (expect 15)")
-    for token in plan:
-        obs = backend.get_ui_tree()                 # observe
-        cands = build_candidates(obs, max_candidates=60)  # translate
-        target = decide(cands, token)               # decide (by translation)
-        if target is None:
-            print(f"  token {token!r}: NO candidate matched — translation missing it")
-            continue
-        print(f"  decide CLICK #{target.id} {target.role.value} {target.name!r} "
-              f"@ {target.element.bounds.center}")
-        backend.click(target.element)               # act
-        time.sleep(0.4)
-
-    time.sleep(0.6)
-    after = _display(backend)                        # verify
-    backend.screenshot("/tmp/movo_pow_after.png")
-    got_15 = "15" in after
-    print(f"\n[verify] calculator display now: {after!r}")
-    print("PROOF OF WORK:", "PASS ✅ (real loop computed 15)" if got_15 else "FAIL ❌")
-
-    try:
-        proc.terminate()
-    except Exception:
-        pass
-    backend.close()
-    return 0 if got_15 else 1
+    ok = result.status.value == "success" and ("type", "OpenAI") in browser.actions
+    print("\nPROOF OF WORK:", "PASS ✅" if ok else "FAIL ❌")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    raise SystemExit(main())

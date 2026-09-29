@@ -1,5 +1,6 @@
 PROMPT.md
 PROMPT.txt
+DESIGN.md
 
 # Python
 __pycache__/
@@ -7,21 +8,25 @@ __pycache__/
 *.egg-info/
 .eggs/
 build/
-dist/
 .venv/
 venv/
-env/
-
-# Packaging
-packaging/deb/**/usr/lib/jev-desktop-agent/
-*.deb
-
-# Tooling
 .pytest_cache/
 .ruff_cache/
 .coverage
 htmlcov/
 
-# App runtime data (never commit secrets)
+# Node / frontend
+node_modules/
+extension/dist/
+extension/.vite/
+*.tsbuildinfo
+
+# Build output / packages
+dist/
+*.zip
+*.xpi
+
+# Secrets & local config
+.env
+.env.local
 *.log
-config.local.json
