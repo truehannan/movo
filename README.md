@@ -68,12 +68,14 @@ Settings, paste your TypeSafe/Jev API key, and click **Test Connection**.
 Get a key and free credit at <https://console.typesafe.ai/keys>.
 
 > **First launch** downloads the Python UI/runtime dependencies (PySide6,
-> typesafe-sdk, mss, pynput) into an isolated virtualenv. This is done on first
-> run — *not* during `apt install` — so the package manager never blocks on a
-> network download. If you are offline on first run, install them later with:
+> typesafe-sdk, mss, pynput) into a per-user virtualenv at
+> `~/.local/share/movo/venv`. This is done on first run — *not* during
+> `apt install` — so the package manager never blocks on a network download,
+> and it needs **no sudo** (it installs into your home, not the system path).
+> If you are offline on first run, install them later with:
 >
 > ```sh
-> sudo movo --setup
+> movo --setup
 > ```
 
 ### Requirements
