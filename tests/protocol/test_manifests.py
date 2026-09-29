@@ -32,7 +32,12 @@ def test_firefox_manifest_uses_sidebar_action():
     assert m["manifest_version"] == 3
     assert "sidebar_action" in m
     assert "sidePanel" not in json.dumps(m)  # Chrome API must not appear in FF
-    assert m["browser_specific_settings"]["gecko"]["id"]
+    gecko = m["browser_specific_settings"]["gecko"]
+    assert gecko["id"]
+    # AMO (Nov 2025+) requires a data-collection declaration; we collect none.
+    assert gecko["data_collection_permissions"]["required"] == ["none"]
+    # data_collection_permissions requires Firefox 140+.
+    assert float(gecko["strict_min_version"]) >= 140.0
 
 
 def test_manifests_share_name_and_description():
