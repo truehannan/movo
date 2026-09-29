@@ -15,37 +15,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-
-      - name: Install deps
+      - name: Install
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
           npm ci || npm install
           sudo apt-get update && sudo apt-get install -y zip
-
-      - name: Test & typecheck
+      - name: Typecheck & test
         run: |
-          ruff check agent tests scripts
-          pytest -q
           npm run typecheck
           npm test
-
       - name: Build & package both extensions
         run: |
           node scripts/build-extension.mjs chrome
           node scripts/build-extension.mjs firefox
           node scripts/package-chrome.mjs
           node scripts/package-firefox.mjs
-
-      # Create the GitHub Release with the uploadable extension files attached
-      # (Chrome .zip + Firefox .xpi). No store auto-publish — download and upload
-      # to the stores yourself.
       - name: Create release with artifacts
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -54,7 +40,6 @@ jobs:
             dist/chrome/extension.zip
             dist/firefox/extension.xpi
           generate_release_notes: true
-
       - name: Upload artifacts (manual runs)
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4

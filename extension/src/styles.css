@@ -64,8 +64,10 @@ html, body, #root {
   background: var(--panel); color: var(--text);
   border: 1px solid var(--hairline); border-radius: var(--radius-sm);
   padding: 9px 10px; font: inherit;
+  cursor: text; pointer-events: auto;
 }
 .composer textarea:focus { outline: none; border-color: var(--accent); }
+.composer textarea:disabled { opacity: 0.6; cursor: not-allowed; }
 .composer .row { display: flex; gap: 8px; margin-top: 8px; }
 button.primary {
   background: var(--accent); color: #08101f; border: none;

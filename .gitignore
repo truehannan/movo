@@ -2,19 +2,6 @@ PROMPT.md
 PROMPT.txt
 DESIGN.md
 
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-.eggs/
-build/
-.venv/
-venv/
-.pytest_cache/
-.ruff_cache/
-.coverage
-htmlcov/
-
 # Node / frontend
 node_modules/
 extension/dist/
@@ -26,7 +13,7 @@ dist/
 *.zip
 *.xpi
 
-# Secrets & local config
+# Local / logs
+*.log
 .env
 .env.local
-*.log
