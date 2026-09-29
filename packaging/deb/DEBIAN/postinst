@@ -1,0 +1,35 @@
+#!/bin/sh
+# Build an isolated virtualenv for the PyPI-only dependencies after install.
+# Uses --system-site-packages so distro python3-gi (AT-SPI) remains available.
+set -e
+
+APP_HOME="/usr/lib/jev-desktop-agent"
+VENV="$APP_HOME/venv"
+
+if [ "$1" = "configure" ]; then
+    if [ ! -d "$VENV" ]; then
+        python3 -m venv --system-site-packages "$VENV" || {
+            echo "jev-desktop-agent: could not create venv; the app will fall back to system python3" >&2
+            exit 0
+        }
+    fi
+    # Best-effort dependency install. Failure here must not fail the package
+    # install; the app degrades and reports missing capabilities at startup.
+    "$VENV/bin/pip" install --upgrade pip >/dev/null 2>&1 || true
+    "$VENV/bin/pip" install \
+        "PySide6-Essentials>=6.6" \
+        "typesafe-sdk>=0.7.0" \
+        "mss>=9.0" \
+        "pynput>=1.7.6" >/dev/null 2>&1 || \
+        echo "jev-desktop-agent: some Python dependencies could not be installed offline; run 'sudo $VENV/bin/pip install PySide6-Essentials typesafe-sdk mss pynput' when online" >&2
+
+    # Refresh desktop + icon caches when the tools are present.
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database -q /usr/share/applications || true
+    fi
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -q -t /usr/share/icons/hicolor || true
+    fi
+fi
+
+exit 0

@@ -1,0 +1,16 @@
+Package: jev-desktop-agent
+Version: 0.1.0
+Section: utils
+Priority: optional
+Architecture: all
+Maintainer: Jev Desktop Agent contributors <noreply@example.com>
+Depends: python3 (>= 3.11), python3-venv, python3-pip, python3-gi, gir1.2-atspi-2.0, at-spi2-core, libxcb-cursor0
+Recommends: wmctrl, xdotool
+Description: Floating Linux desktop computer-use agent powered by Jev
+ A compact, always-on-top desktop agent that observes the Linux desktop via the
+ AT-SPI accessibility tree, builds compact typed candidates, asks TypeSafe's Jev
+ System One model for bounded typed decisions, executes real mouse and keyboard
+ actions, and verifies each step.
+ .
+ Jev is the fast decision brain; this application gives it eyes, hands, a memory
+ of the current task, and safety.

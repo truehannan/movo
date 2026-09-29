@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Jev Desktop Agent
+GenericName=Desktop AI Agent
+Comment=Control your Linux desktop with fast, typed AI decisions
+Exec=jev-desktop-agent
+Icon=jev-desktop-agent
+Terminal=false
+Categories=Utility;Development;
+Keywords=AI;agent;automation;jev;typesafe;
+StartupNotify=true
+StartupWMClass=jev-desktop-agent

@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jev-desktop-agent"
+version = "0.1.0"
+description = "A floating Linux desktop computer-use agent powered by TypeSafe's Jev System One decision model."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+authors = [{ name = "Jev Desktop Agent contributors" }]
+keywords = ["jev", "typesafe", "desktop-agent", "computer-use", "at-spi", "pyside6"]
+classifiers = [
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+# Runtime dependencies. The Debian package declares system deps (python3-gi,
+# gir1.2-atspi-2.0) separately; the ones here are the pip-installable pieces.
+dependencies = [
+    "PySide6>=6.6",
+    "typesafe-sdk>=0.7.0",
+    "mss>=9.0",
+    "pynput>=1.7.6",
+]
+
+[project.optional-dependencies]
+# Secure OS keyring storage. Optional: the agent falls back to a restricted
+# local file when keyring is unavailable.
+keyring = ["keyring>=24.0"]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+jev-desktop-agent = "app.main:main"
+
+[project.urls]
+Homepage = "https://github.com/example/jev-desktop-agent"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+app = ["ui/assets/*.svg", "ui/assets/*.png"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+# str+Enum is an intentional, widely-used idiom for JSON-friendly enums that
+# stays compatible with Python 3.11 (StrEnum semantics differ subtly).
+ignore = ["E501", "UP042"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

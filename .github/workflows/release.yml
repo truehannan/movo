@@ -1,0 +1,45 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & attach .deb to release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev lintian python3-gi gir1.2-atspi-2.0 at-spi2-core
+          python -m pip install --upgrade pip
+          pip install typesafe-sdk mss pynput pytest ruff
+
+      - name: Test
+        run: |
+          ruff check app tests
+          pytest -q
+
+      - name: Build .deb
+        run: bash packaging/build_deb.sh dist
+
+      - name: Validate .deb
+        run: bash packaging/validate_deb.sh dist/jev-desktop-agent_0.1.0_all.deb
+
+      - name: Create release and upload .deb
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.deb
+          generate_release_notes: true

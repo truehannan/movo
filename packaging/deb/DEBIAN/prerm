@@ -1,0 +1,11 @@
+#!/bin/sh
+# Remove the generated virtualenv on removal so no orphan files remain.
+set -e
+
+APP_HOME="/usr/lib/jev-desktop-agent"
+
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    rm -rf "$APP_HOME/venv" || true
+fi
+
+exit 0
