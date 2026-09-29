@@ -2,7 +2,7 @@
 # Remove the generated virtualenv on removal so no orphan files remain.
 set -e
 
-APP_HOME="/usr/lib/jev-desktop-agent"
+APP_HOME="/usr/lib/movo"
 
 if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
     rm -rf "$APP_HOME/venv" || true

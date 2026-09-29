@@ -60,7 +60,7 @@ def test_secret_store_file_backend_roundtrip(tmp_path, monkeypatch):
     store.set_api_key("sk-secret-value-123456")
     assert store.get_api_key() == "sk-secret-value-123456"
     # File permissions are owner-only.
-    mode = oct(os.stat(tmp_path / "jev-desktop-agent" / "secrets.json").st_mode)[-3:]
+    mode = oct(os.stat(tmp_path / "movo" / "secrets.json").st_mode)[-3:]
     assert mode == "600"
     store.clear_api_key()
     assert not store.has_api_key()

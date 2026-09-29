@@ -1,0 +1,67 @@
+#!/bin/sh
+# Launcher for Movo.
+#
+# On first launch the PyPI-only dependencies (PySide6, typesafe-sdk, mss,
+# pynput) are installed into an isolated virtualenv. This is done HERE rather
+# than in the package postinst so a slow download never blocks or hangs the
+# package manager. The venv uses --system-site-packages so the distro's
+# python3-gi / AT-SPI bindings (not on PyPI) remain available.
+set -e
+
+APP_HOME="/usr/lib/movo"
+VENV="$APP_HOME/venv"
+VENV_PY="$VENV/bin/python3"
+MARKER="$VENV/.deps-ok"
+
+log() { echo "movo: $*" >&2; }
+
+bootstrap() {
+    log "first run: setting up dependencies (this happens once)…"
+    if [ ! -x "$VENV_PY" ]; then
+        python3 -m venv --system-site-packages "$VENV" || {
+            log "could not create virtualenv; falling back to system python3"
+            return 1
+        }
+    fi
+    "$VENV/bin/pip" install --upgrade pip >/dev/null 2>&1 || true
+    if "$VENV/bin/pip" install \
+        "PySide6-Essentials>=6.6" \
+        "typesafe-sdk>=0.7.0" \
+        "mss>=9.0" \
+        "pynput>=1.7.6"; then
+        touch "$MARKER"
+        log "dependencies installed."
+        return 0
+    fi
+    log "dependency install failed (offline?). Retry with: sudo $0 --setup"
+    return 1
+}
+
+# Explicit setup mode: run the bootstrap and exit.
+if [ "$1" = "--setup" ]; then
+    bootstrap
+    exit $?
+fi
+
+# Auto-bootstrap on first run. If the venv isn't ready, try once; if it fails
+# (e.g. offline) fall through to system python3 so the app can still open and
+# report which capabilities are missing.
+if [ ! -f "$MARKER" ]; then
+    # Show progress in a terminal if one is available; otherwise run inline.
+    if [ -t 1 ]; then
+        bootstrap || true
+    elif command -v x-terminal-emulator >/dev/null 2>&1; then
+        x-terminal-emulator -e "sh -c '\"$0\" --setup; echo; echo Press Enter to continue; read x'" || bootstrap || true
+    else
+        bootstrap || true
+    fi
+fi
+
+if [ -x "$VENV_PY" ]; then
+    PY="$VENV_PY"
+else
+    PY="$(command -v python3)"
+fi
+
+export PYTHONPATH="$APP_HOME${PYTHONPATH:+:$PYTHONPATH}"
+exec "$PY" -m app.main "$@"

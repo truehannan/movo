@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="28" fill="#0f1115"/>
-  <rect x="8" y="8" width="112" height="112" rx="22" fill="none" stroke="#272b34" stroke-width="2"/>
-  <!-- Stylised 'J' cursor mark -->
-  <path d="M78 34 v40 a22 22 0 0 1 -44 0" fill="none" stroke="#5b8cff" stroke-width="9" stroke-linecap="round"/>
-  <circle cx="78" cy="30" r="7" fill="#5b8cff"/>
-  <!-- decision dot -->
-  <circle cx="94" cy="90" r="6" fill="#3ecf8e"/>
-</svg>

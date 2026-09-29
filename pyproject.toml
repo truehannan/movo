@@ -3,13 +3,13 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "jev-desktop-agent"
+name = "movo"
 version = "0.1.0"
-description = "A floating Linux desktop computer-use agent powered by TypeSafe's Jev System One decision model."
+description = "Movo: a floating Linux desktop computer-use agent powered by TypeSafe's Jev System One decision model."
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.11"
-authors = [{ name = "Jev Desktop Agent contributors" }]
+authors = [{ name = "Movo contributors" }]
 keywords = ["jev", "typesafe", "desktop-agent", "computer-use", "at-spi", "pyside6"]
 classifiers = [
     "Environment :: X11 Applications :: Qt",
@@ -40,17 +40,17 @@ dev = [
 ]
 
 [project.scripts]
-jev-desktop-agent = "app.main:main"
+movo = "app.main:main"
 
 [project.urls]
-Homepage = "https://github.com/example/jev-desktop-agent"
+Homepage = "https://github.com/truehannan/computer-jev"
 
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
 
 [tool.setuptools.package-data]
-app = ["ui/assets/*.svg", "ui/assets/*.png"]
+app = ["ui/assets/*.png"]
 
 [tool.ruff]
 line-length = 100

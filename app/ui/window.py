@@ -31,6 +31,7 @@ from app.safety.emergency_stop import EmergencyStop
 from app.ui import styles
 from app.ui.overlay import HighlightOverlay
 from app.ui.panel import Panel
+from app.ui.resources import logo_path
 from app.ui.settings import SettingsView
 
 _PAGE_WELCOME = 0
@@ -123,9 +124,24 @@ class MainWindow(QWidget):
         self.status_dot = QLabel("●")
         self.status_dot.setObjectName("StatusDot")
         self.status_dot.setStyleSheet(f"color: {styles.TEXT_FAINT};")
-        name = QLabel("Jev Desktop Agent")
+
+        logo = QLabel()
+        _logo_path = logo_path()
+        if _logo_path:
+            from PySide6.QtGui import QPixmap
+
+            pix = QPixmap(_logo_path).scaled(
+                20,
+                20,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            logo.setPixmap(pix)
+
+        name = QLabel("Movo")
         name.setObjectName("AppName")
         lay.addWidget(self.status_dot)
+        lay.addWidget(logo)
         lay.addWidget(name)
         lay.addStretch(1)
 
@@ -147,12 +163,33 @@ class MainWindow(QWidget):
         lay = QVBoxLayout(w)
         lay.setContentsMargins(20, 8, 20, 20)
         lay.setSpacing(10)
-        title = QLabel("Jev Desktop Agent")
+
+        # Centered brand header: logo above the name.
+        _logo_path = logo_path()
+        if _logo_path:
+            from PySide6.QtGui import QPixmap
+
+            brand = QLabel()
+            brand.setPixmap(
+                QPixmap(_logo_path).scaled(
+                    64,
+                    64,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+            brand.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+            lay.addSpacing(8)
+            lay.addWidget(brand)
+
+        title = QLabel("Movo")
         title.setObjectName("H1")
+        title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         lay.addWidget(title)
         sub = QLabel("Control your Linux desktop with fast, typed AI decisions.")
         sub.setObjectName("Dim")
         sub.setWordWrap(True)
+        sub.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         lay.addWidget(sub)
 
         # Capability diagnostics (PROMPT section 22).

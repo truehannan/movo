@@ -1,4 +1,4 @@
-"""Jev Desktop Agent.
+"""Movo — Jev-powered desktop agent.
 
 A floating Linux desktop computer-use agent powered by TypeSafe's Jev
 System One decision model.

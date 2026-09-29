@@ -36,7 +36,7 @@ jobs:
         run: bash packaging/build_deb.sh dist
 
       - name: Validate .deb
-        run: bash packaging/validate_deb.sh dist/jev-desktop-agent_0.1.0_all.deb
+        run: bash packaging/validate_deb.sh dist/movo_0.1.0_all.deb
 
       # Only create a GitHub Release when this run was triggered by a v* tag.
       # softprops/action-gh-release requires a tag, so guarding it lets manual
@@ -53,6 +53,6 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
         with:
-          name: jev-desktop-agent-deb
+          name: movo-deb
           path: dist/*.deb
           if-no-files-found: error

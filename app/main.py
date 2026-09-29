@@ -50,12 +50,14 @@ def _build_backend():
 
 
 def main() -> int:
+    from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
 
     from app.config.secrets import SecretStore
     from app.config.settings import Settings
     from app.diagnostics.capabilities import check_capabilities
     from app.diagnostics.logging import configure_logging
+    from app.ui.resources import logo_path
     from app.ui.window import MainWindow
 
     settings = Settings.load()
@@ -64,8 +66,12 @@ def main() -> int:
     capabilities = check_capabilities()
 
     app = QApplication.instance() or QApplication(sys.argv)
-    app.setApplicationName("Jev Desktop Agent")
-    app.setDesktopFileName("jev-desktop-agent")
+    app.setApplicationName("Movo")
+    app.setApplicationDisplayName("Movo")
+    app.setDesktopFileName("movo")
+    _logo = logo_path()
+    if _logo:
+        app.setWindowIcon(QIcon(_logo))
 
     backend = _build_backend()
     window = MainWindow(backend, settings, secrets, capabilities)

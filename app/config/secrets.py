@@ -16,14 +16,14 @@ import os
 import stat
 from pathlib import Path
 
-_SERVICE = "jev-desktop-agent"
+_SERVICE = "movo"
 _ACCOUNT = "typesafe-api-key"
 _ENV_VAR = "TYPESAFE_API_KEY"
 
 
 def _config_dir() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    return Path(base) / "jev-desktop-agent"
+    return Path(base) / "movo"
 
 
 def mask_key(key: str | None) -> str:

@@ -14,7 +14,7 @@ from pathlib import Path
 
 def _config_dir() -> Path:
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    return Path(base) / "jev-desktop-agent"
+    return Path(base) / "movo"
 
 
 @dataclass

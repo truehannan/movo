@@ -1,7 +1,13 @@
-# Jev Desktop Agent
+<p align="center">
+  <img src="public/movo.png" alt="Movo" width="120" />
+</p>
 
-A compact, floating **Linux desktop computer-use agent** powered by
-[TypeSafe AI's **Jev** System One decision model](https://docs.typesafe.ai).
+<h1 align="center">Movo</h1>
+
+<p align="center">
+  A compact, floating <strong>Linux desktop computer-use agent</strong> powered by
+  <a href="https://docs.typesafe.ai">TypeSafe AI's <strong>Jev</strong> System One decision model</a>.
+</p>
 
 Jev is not a chatbot and this is not a "screenshot → giant prompt → instructions"
 agent. Jev makes **bounded, typed decisions** with calibrated confidence, and
@@ -53,19 +59,28 @@ confirmation — is handled in code. Jev is only asked the semantic questions.
 Download the `.deb` from a release (or build it — see below) and install:
 
 ```sh
-sudo apt install ./jev-desktop-agent_0.1.0_all.deb
+sudo apt install ./movo_0.1.0_all.deb
 ```
 
-Then launch **Jev Desktop Agent** from your app menu. On first run, open
+Then launch **Movo** from your app menu. On first run, open
 Settings, paste your TypeSafe/Jev API key, and click **Test Connection**.
 
 Get a key and free credit at <https://console.typesafe.ai/keys>.
+
+> **First launch** downloads the Python UI/runtime dependencies (PySide6,
+> typesafe-sdk, mss, pynput) into an isolated virtualenv. This is done on first
+> run — *not* during `apt install` — so the package manager never blocks on a
+> network download. If you are offline on first run, install them later with:
+>
+> ```sh
+> sudo movo --setup
+> ```
 
 ### Requirements
 
 * Linux with an **X11** session (Wayland support depends on the backend)
 * AT-SPI accessibility enabled (`at-spi2-core`, `python3-gi`, `gir1.2-atspi-2.0`)
-* The installer creates an isolated virtualenv for the PyPI dependencies
+* Internet access on first launch for the isolated virtualenv
   (`PySide6`, `typesafe-sdk`, `mss`, `pynput`).
 
 ## Usage
@@ -121,7 +136,7 @@ packaging/deb/       Debian package tree + build/validate scripts
 
 ```sh
 bash packaging/build_deb.sh dist
-bash packaging/validate_deb.sh dist/jev-desktop-agent_0.1.0_all.deb
+bash packaging/validate_deb.sh dist/movo_0.1.0_all.deb
 ```
 
 CI builds and validates the package on every push (`.github/workflows/build.yml`)
@@ -130,7 +145,7 @@ and attaches it to tagged releases (`release.yml`).
 ## Security & privacy
 
 * The API key is stored via the OS keyring when available, otherwise in a
-  `0600` file under `~/.config/jev-desktop-agent/`. It is **never** logged — a
+  `0600` file under `~/.config/movo/`. It is **never** logged — a
   redacting log filter is a defence-in-depth backstop.
 * Screenshots are used only for the visual overlay/debugging and are **never**
   sent to Jev. Jev receives compact structured state only.
