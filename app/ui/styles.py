@@ -142,6 +142,14 @@ def stylesheet() -> str:
         border-radius: {R_SM}px;
         padding: 4px;
     }}
+    #LogView {{
+        background: #000000;
+        border: 1px solid {INK_HAIRLINE};
+        border-radius: {R_SM}px;
+        color: {WHITE_MUTED};
+        font-family: "SF Mono", "DejaVu Sans Mono", "Consolas", monospace;
+        font-size: 11px;
+    }}
     QListWidget::item {{ padding: 3px 4px; }}
     QScrollBar:vertical {{ background: transparent; width: 8px; }}
     QScrollBar::handle:vertical {{ background: {INK_HAIRLINE}; border-radius: 4px; }}

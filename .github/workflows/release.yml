@@ -36,7 +36,7 @@ jobs:
         run: bash packaging/build_deb.sh dist
 
       - name: Validate .deb
-        run: bash packaging/validate_deb.sh dist/movo_0.2.0_all.deb
+        run: bash packaging/validate_deb.sh dist/movo_0.2.1_all.deb
 
       # Only create a GitHub Release when this run was triggered by a v* tag.
       # softprops/action-gh-release requires a tag, so guarding it lets manual

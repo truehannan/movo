@@ -92,6 +92,10 @@ class TaskController:
         """Install + download + start the local Laya runtime (UI-driven)."""
         return self._laya_runtime().provision_and_start(progress)
 
+    def open_laya_interactive_setup(self) -> bool:
+        """Open a terminal that runs Laya setup with live logs."""
+        return self._laya_runtime().open_interactive_setup()
+
     # --- running ---------------------------------------------------------
     @property
     def running(self) -> bool:

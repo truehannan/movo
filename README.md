@@ -59,7 +59,7 @@ confirmation — is handled in code. Jev is only asked the semantic questions.
 Download the `.deb` from a release (or build it — see below) and install:
 
 ```sh
-sudo apt install ./movo_0.2.0_all.deb
+sudo apt install ./movo_0.2.1_all.deb
 ```
 
 Then launch **Movo** from your app menu. On first run, open
@@ -100,6 +100,25 @@ Open **Model** in the title bar and choose your decision provider:
 Movo keeps the decision space small (a handful of typed candidates and
 operations per step), which suits Laya's strengths and avoids its known weak
 spot with many-label choices.
+
+Setting up Laya installs the `laya[serve]` package into Movo's per-user
+virtualenv and downloads the checkpoint on first use. The **Set up Laya locally**
+button streams the real install/download output into an in-app log (**Show
+logs**), and **Open in terminal** runs the same setup in a terminal window with
+live output. From the command line you can also run:
+
+```sh
+movo --laya-setup
+```
+
+## The window (Dynamic Island)
+
+Movo lives as a **Dynamic Island** pinned to the top-center of the screen. It is
+non-movable and stays out of the way: it retracts to a thin sliver at the top
+edge, and **drops down with a bounce when you move the pointer to the top of the
+screen** (or onto the island). It retracts again when the pointer leaves —
+unless you are typing a task or a run is in progress, in which case it stays
+open.
 
 ## Updates
 
@@ -162,7 +181,7 @@ packaging/deb/       Debian package tree + build/validate scripts
 
 ```sh
 bash packaging/build_deb.sh dist
-bash packaging/validate_deb.sh dist/movo_0.2.0_all.deb
+bash packaging/validate_deb.sh dist/movo_0.2.1_all.deb
 ```
 
 CI builds and validates the package on every push (`.github/workflows/build.yml`)

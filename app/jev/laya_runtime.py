@@ -1,18 +1,21 @@
 """Local Laya runtime manager.
 
-Laya is an open-weight System One model that runs on the user's own machine. We
-run it behind a small HTTP server that implements TypeSafe's exact ``/v1/systemone``
-wire contract (``laya-server``), so Movo's existing decision engine talks to it
-through the same ``typesafe-sdk`` with only the base URL changed.
+Laya is an open-weight System One model that runs on the user's own machine. The
+``laya`` PyPI package's ``serve`` extra provides a ``laya-serve`` command that
+exposes TypeSafe's exact ``POST /v1/systemone`` wire contract, so Movo's decision
+engine talks to it through the same ``typesafe-sdk`` with only the base URL
+changed.
 
 This manager owns everything local and heavy, kept out of the agent loop:
 
-* installing ``laya-server`` into Movo's per-user virtualenv on demand,
-* downloading the model checkpoint (once, into the shared Hugging Face cache),
-* starting / health-checking / stopping the local server subprocess.
+* installing ``laya[serve]`` into Movo's per-user virtualenv on demand,
+* starting / health-checking / stopping the local ``laya-serve`` subprocess
+  (the model checkpoint downloads automatically on first inference / preload).
 
-All long operations report progress through a callback so the UI can show it,
-and nothing here requires root — installs go into ``~/.local/share/movo``.
+Install and download stream their **real** output through a progress callback —
+no output is swallowed or relabelled — and an optional interactive-terminal path
+shows the whole thing live. Nothing requires root; installs go into
+``~/.local/share/movo``.
 """
 
 from __future__ import annotations
@@ -34,9 +37,18 @@ _log = get_logger()
 
 ProgressCb = Callable[[str], None]
 
-# The pip package that provides the Jev-wire-compatible local server + CLI.
-_LAYA_PACKAGE = "laya-server"
+# The correct PyPI package + extra that ships the laya-serve HTTP server.
+# (There is no 'laya-server' distribution — installing that fails with
+# "No matching distribution found", which earlier looked like a network error.)
+_LAYA_REQUIREMENT = "laya[serve]"
 _HEALTH_PATH = "/"
+
+# Map our checkpoint names to laya-serve's LAYA_MODELS identifiers.
+_MODEL_ALIASES = {
+    "laya": "english",
+    "laya-multilingual": "multilingual",
+    "laya-typed-decisions": "typed-decisions",
+}
 
 
 def _data_home() -> Path:
@@ -79,31 +91,36 @@ class LayaRuntime:
         return f"http://127.0.0.1:{self._port}"
 
     def _python(self) -> str:
-        """The interpreter to use: the per-user venv if present, else current."""
         vp = _venv_python()
         return str(vp) if vp.exists() else sys.executable
 
+    def _serve_cli(self) -> str:
+        vb = _venv_bin("laya-serve")
+        if vb.exists():
+            return str(vb)
+        return shutil.which("laya-serve") or "laya-serve"
+
     def is_installed(self) -> bool:
-        """True if laya-server is importable in the target interpreter."""
+        """True if the laya package (with serve extra) is importable."""
         try:
             out = subprocess.run(
-                [self._python(), "-c", "import server.api"],  # laya-server package
+                [self._python(), "-c", "import laya, laya.serve"],
                 capture_output=True,
-                timeout=15,
+                timeout=20,
             )
             if out.returncode == 0:
                 return True
         except Exception:
             pass
-        # Fallback: the console script exists.
-        return _venv_bin("laya-server").exists() or bool(shutil.which("laya-server"))
+        return _venv_bin("laya-serve").exists() or bool(shutil.which("laya-serve"))
 
     def checkpoint_present(self) -> bool:
-        """True if the checkpoint is already in the shared HF cache."""
+        """True if the checkpoint's weights are already in the HF cache."""
         cache = os.environ.get("HF_HUB_CACHE") or os.path.expanduser(
             "~/.cache/huggingface/hub"
         )
-        marker = Path(cache) / f"models--convaiinnovations--{self._checkpoint}"
+        # The English checkpoint lives at the repo root; variants under it.
+        marker = Path(cache) / "models--convaiinnovations--laya"
         return marker.exists()
 
     def is_running(self) -> bool:
@@ -118,96 +135,114 @@ class LayaRuntime:
         )
 
     # --- install ---------------------------------------------------------
+    def _stream(self, cmd: list[str], progress: ProgressCb, env: dict | None = None) -> int:
+        """Run a command, streaming each output line to the progress callback.
+
+        Returns the exit code. The real stdout/stderr is surfaced verbatim so
+        the user sees the actual failure, not a guessed cause.
+        """
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                env=env or os.environ.copy(),
+            )
+        except Exception as exc:
+            progress(f"could not launch: {type(exc).__name__}: {exc}")
+            return 127
+        assert proc.stdout is not None
+        tail: list[str] = []
+        for line in proc.stdout:
+            line = line.rstrip()
+            if line:
+                tail.append(line)
+                tail[:] = tail[-40:]
+                progress(line)
+        proc.wait()
+        if proc.returncode != 0 and tail:
+            _log.warning("command failed (%d): %s", proc.returncode, " | ".join(tail[-4:]))
+        return proc.returncode
+
     def ensure_installed(self, progress: ProgressCb | None = None) -> bool:
-        """Install laya-server into the per-user venv if it is not present."""
+        """Install laya[serve] into the per-user venv, surfacing real output."""
         p = progress or (lambda _m: None)
         if self.is_installed():
+            p("Laya runtime already installed.")
             return True
         py = self._python()
-        p("Installing Laya runtime… (one-time, a few hundred MB)")
-        try:
-            subprocess.run([py, "-m", "pip", "install", "--upgrade", "pip"], timeout=120)
-            proc = subprocess.run(
-                [py, "-m", "pip", "install", _LAYA_PACKAGE],
-                capture_output=True,
-                text=True,
-                timeout=1800,
-            )
-            if proc.returncode != 0:
-                _log.warning("laya install failed: %s", proc.stderr[-300:])
-                p("Laya install failed. Check your connection and retry.")
-                return False
-        except Exception as exc:  # pragma: no cover - network dependent
-            _log.warning("laya install error: %s", exc)
-            p(f"Laya install error: {type(exc).__name__}")
+        p(f"Installing {_LAYA_REQUIREMENT} with {py} …")
+        self._stream([py, "-m", "pip", "install", "--upgrade", "pip"], p)
+        rc = self._stream([py, "-m", "pip", "install", _LAYA_REQUIREMENT], p)
+        if rc != 0:
+            p(f"Install failed (pip exit {rc}). See the log above for the real error.")
+            return False
+        if not self.is_installed():
+            p("Install finished but the laya package is still not importable.")
             return False
         p("Laya runtime installed.")
         return True
 
     def ensure_checkpoint(self, progress: ProgressCb | None = None) -> bool:
-        """Download the checkpoint into the HF cache if it is not present."""
+        """Trigger a one-time checkpoint download via a tiny routing/predict call.
+
+        laya downloads weights on first inference, so we warm the cache with a
+        minimal predict. Output streams through the callback.
+        """
         p = progress or (lambda _m: None)
         if self.checkpoint_present():
+            p("Model already downloaded.")
             return True
         p(f"Downloading the {self._checkpoint} model (~850 MB, one-time)…")
-        try:
-            proc = subprocess.run(
-                [self._laya_cli(), "pull", self._checkpoint],
-                capture_output=True,
-                text=True,
-                timeout=3600,
-            )
-            if proc.returncode != 0:
-                _log.warning("checkpoint pull failed: %s", proc.stderr[-300:])
-                p("Model download failed. Check your connection and retry.")
-                return False
-        except Exception as exc:  # pragma: no cover - network dependent
-            _log.warning("checkpoint pull error: %s", exc)
-            p(f"Model download error: {type(exc).__name__}")
+        model_alias = _MODEL_ALIASES.get(self._checkpoint, "english")
+        code = (
+            "import laya;"
+            "a=laya.load('convaiinnovations/laya');"
+            "a.predict('warm up',"
+            "{'ok':{'type':'noul','instructions':'warm up'}});"
+            "print('checkpoint ready')"
+        )
+        rc = self._stream([self._python(), "-c", code], p)
+        if rc != 0 or not self.checkpoint_present():
+            p("Model download did not complete. See the log above.")
             return False
-        p("Model downloaded.")
+        p(f"Model {model_alias} downloaded.")
         return True
 
-    def _laya_cli(self) -> str:
-        vb = _venv_bin("laya-server")
-        if vb.exists():
-            return str(vb)
-        found = shutil.which("laya-server")
-        return found or "laya-server"
-
     # --- server lifecycle ------------------------------------------------
-    def start(self, progress: ProgressCb | None = None, timeout_s: float = 60.0) -> bool:
-        """Start the local server and wait until it answers the health check."""
+    def _serve_env(self) -> dict:
+        env = os.environ.copy()
+        env["LAYA_HOST"] = "127.0.0.1"
+        env["LAYA_PORT"] = str(self._port)
+        env["LAYA_PRELOAD"] = "1"
+        env["LAYA_MODELS"] = _MODEL_ALIASES.get(self._checkpoint, "english")
+        return env
+
+    def start(self, progress: ProgressCb | None = None, timeout_s: float = 90.0) -> bool:
+        """Start laya-serve and wait until it answers the health check."""
         p = progress or (lambda _m: None)
         if self._ping():
+            p("Laya server already running.")
             return True
         p("Starting local Laya server…")
-        env = dict(os.environ)
         try:
             self._proc = subprocess.Popen(
-                [
-                    self._laya_cli(),
-                    "serve",
-                    self._checkpoint,
-                    "--host",
-                    "127.0.0.1",
-                    "--port",
-                    str(self._port),
-                    "--no-browser",
-                ],
+                [self._serve_cli()],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                env=env,
+                env=self._serve_env(),
             )
-        except Exception as exc:  # pragma: no cover - env dependent
-            _log.warning("could not launch laya server: %s", exc)
-            p(f"Could not start Laya: {type(exc).__name__}")
+        except Exception as exc:
+            _log.warning("could not launch laya-serve: %s", exc)
+            p(f"Could not start Laya: {type(exc).__name__}: {exc}")
             return False
 
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:
             if self._proc.poll() is not None:
-                p("Laya server exited unexpectedly.")
+                p(f"Laya server exited (code {self._proc.returncode}).")
                 return False
             if self._ping():
                 p("Laya is ready.")
@@ -244,3 +279,42 @@ class LayaRuntime:
             and self.ensure_checkpoint(progress)
             and self.start(progress)
         )
+
+    # --- interactive terminal -------------------------------------------
+    def open_interactive_setup(self) -> bool:
+        """Open a real terminal that runs the setup with live, scrolling logs.
+
+        Preferred when the user wants to watch the full install/download output.
+        Returns True if a terminal was launched.
+        """
+        py = self._python()
+        # A self-contained shell snippet that installs, warms the checkpoint,
+        # and pauses so the user can read the result.
+        script = (
+            f'echo "Movo — setting up Laya locally"; '
+            f'"{py}" -m pip install --upgrade pip; '
+            f'"{py}" -m pip install "{_LAYA_REQUIREMENT}" && '
+            f'"{py}" -c "import laya; a=laya.load(\'convaiinnovations/laya\'); '
+            f"a.predict('warm up', {{'ok':{{'type':'noul','instructions':'warm up'}}}}); "
+            f'print(\'Laya is ready.\')"; '
+            f'echo; echo "Done. You can close this window."; '
+            f'read -p "Press Enter to close…" _'
+        )
+        for term in (
+            ["x-terminal-emulator", "-e"],
+            ["gnome-terminal", "--"],
+            ["konsole", "-e"],
+            ["xterm", "-e"],
+        ):
+            exe = shutil.which(term[0])
+            if not exe:
+                continue
+            try:
+                if term[0] == "gnome-terminal":
+                    subprocess.Popen([exe, "--", "bash", "-lc", script])
+                else:
+                    subprocess.Popen([exe] + term[1:] + ["bash", "-lc", script])
+                return True
+            except Exception:
+                continue
+        return False

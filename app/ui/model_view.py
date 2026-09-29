@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QVBoxLayout,
@@ -68,6 +69,7 @@ class ModelView(QWidget):
     back = Signal()
     provider_chosen = Signal(str)  # "jev" | "laya"
     provision_laya_requested = Signal()
+    open_terminal_requested = Signal()
     save_key_requested = Signal(str)
     test_requested = Signal()
 
@@ -147,12 +149,32 @@ class ModelView(QWidget):
         self.laya_progress.setTextVisible(False)
         self.laya_progress.setFixedHeight(4)
         self.laya_progress.hide()
+
+        # Live, scrolling log of the real install/download output.
+        self.laya_log = QPlainTextEdit()
+        self.laya_log.setReadOnly(True)
+        self.laya_log.setObjectName("LogView")
+        self.laya_log.setFixedHeight(96)
+        self.laya_log.setPlaceholderText("Setup logs appear here…")
+        self.laya_log.hide()
+
+        btn_row = QHBoxLayout()
         self.provision_btn = QPushButton("Set up Laya locally")
         self.provision_btn.setObjectName("Primary")
         self.provision_btn.clicked.connect(self._on_provision)
+        self.logs_btn = QPushButton("Show logs")
+        self.logs_btn.clicked.connect(self._toggle_logs)
+        self.terminal_btn = QPushButton("Open in terminal")
+        self.terminal_btn.clicked.connect(self.open_terminal_requested.emit)
+        btn_row.addWidget(self.provision_btn)
+        btn_row.addWidget(self.logs_btn)
+        btn_row.addWidget(self.terminal_btn)
+        btn_row.addStretch(1)
+
         lrl.addWidget(self.laya_status)
         lrl.addWidget(self.laya_progress)
-        lrl.addWidget(self.provision_btn)
+        lrl.addLayout(btn_row)
+        lrl.addWidget(self.laya_log)
         root.addWidget(self.laya_row)
 
         root.addStretch(1)
@@ -196,11 +218,26 @@ class ModelView(QWidget):
     def _on_provision(self) -> None:
         self.provision_btn.setEnabled(False)
         self.laya_progress.show()
+        self.laya_log.show()
+        self.logs_btn.setText("Hide logs")
+        self.laya_log.clear()
         self.set_laya_status("Starting setup…")
         self.provision_laya_requested.emit()
 
+    def _toggle_logs(self) -> None:
+        if self.laya_log.isVisible():
+            self.laya_log.hide()
+            self.logs_btn.setText("Show logs")
+        else:
+            self.laya_log.show()
+            self.logs_btn.setText("Hide logs")
+
     def set_laya_status(self, text: str) -> None:
-        self.laya_status.setText(text)
+        # The most recent line is the status; the full stream goes to the log.
+        self.laya_status.setText(text[:120])
+        self.laya_log.appendPlainText(text)
+        sb = self.laya_log.verticalScrollBar()
+        sb.setValue(sb.maximum())
 
     def set_laya_done(self, ok: bool) -> None:
         self.laya_progress.hide()

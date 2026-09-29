@@ -49,7 +49,23 @@ def _build_backend():
         return _NullBackend()
 
 
+def _laya_setup_cli() -> int:
+    """Provision Laya from the command line with live streaming logs."""
+    from app.config.settings import Settings
+    from app.jev.laya_runtime import LayaRuntime
+
+    s = Settings.load()
+    rt = LayaRuntime(port=s.laya_port, checkpoint=s.laya_checkpoint)
+    print("Movo — setting up Laya locally\n")
+    ok = rt.provision_and_start(progress=lambda m: print(m, flush=True))
+    print("\nLaya is ready." if ok else "\nLaya setup did not complete (see above).")
+    return 0 if ok else 1
+
+
 def main() -> int:
+    if "--laya-setup" in sys.argv:
+        return _laya_setup_cli()
+
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
 

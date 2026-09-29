@@ -14,11 +14,19 @@ from __future__ import annotations
 
 import threading
 
-from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    QPoint,
+    QPropertyAnimation,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMessageBox,
     QPushButton,
     QStackedWidget,
@@ -51,6 +59,37 @@ _PAGE_SETTINGS = 3
 _WIN_W = 720
 _WIN_H = 360
 
+# Dynamic-island geometry.
+_PEEK = 6            # px of the island left visible when retracted
+_TOP_MARGIN = 8     # px gap from the very top of the screen when revealed
+_TRIGGER_H = 4      # px-thin hover strip pinned to the screen's top edge
+_ANIM_MS = 420      # reveal animation duration (bounce)
+
+
+class _TopEdgeTrigger(QWidget):
+    """A thin, transparent, always-on-top strip across the screen's top-center.
+
+    Hovering it asks the island to drop down; it exists so the reveal works even
+    when the island is retracted almost entirely off-screen (and thus not itself
+    hovering-detectable). It is click-through-ish: it only watches enter events.
+    """
+
+    def __init__(self, on_enter) -> None:
+        super().__init__(None)
+        self._on_enter = on_enter
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowStaysOnTopHint
+            | Qt.WindowType.Tool
+        )
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_AlwaysShowToolTips, False)
+
+    def enterEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        self._on_enter()
+        super().enterEvent(event)
+
 
 class MainWindow(QWidget):
     """The single floating window."""
@@ -77,7 +116,6 @@ class MainWindow(QWidget):
         self._backend = backend
         self._caps = capabilities
         self._stop = EmergencyStop()
-        self._drag_offset: QPoint | None = None
         self._pending_release = None  # updater.ReleaseInfo when an update exists
 
         self._controller = TaskController(
@@ -94,11 +132,24 @@ class MainWindow(QWidget):
                 lambda bounds, ms: self._highlight_signal.emit(bounds, ms)
             )
 
+        # --- dynamic-island state ---
+        self._revealed = False
+        self._revealed_y = 0
+        self._retracted_y = 0
+        self._anim = QPropertyAnimation(self, b"pos")
+        self._anim.setDuration(_ANIM_MS)
+        self._retract_timer = QTimer(self)
+        self._retract_timer.setSingleShot(True)
+        self._retract_timer.setInterval(400)
+        self._retract_timer.timeout.connect(self._maybe_retract)
+        self._trigger = _TopEdgeTrigger(self._reveal)
+
         self._build()
         self._wire_signals()
         self._install_shortcuts()
         self._route_first_view()
         self._start_update_check()
+        self._setup_island()
 
     # --- construction ----------------------------------------------------
     def _build(self) -> None:
@@ -135,7 +186,6 @@ class MainWindow(QWidget):
         root_l.addWidget(self.stack, 1)
 
         self.setStyleSheet(styles.stylesheet())
-        self._position_centered_above()
 
     def _title_bar(self) -> QWidget:
         bar = QWidget()
@@ -255,6 +305,7 @@ class MainWindow(QWidget):
         self.model_view.back.connect(self._route_first_view)
         self.model_view.provider_chosen.connect(self._on_provider_chosen)
         self.model_view.provision_laya_requested.connect(self._on_provision_laya)
+        self.model_view.open_terminal_requested.connect(self._on_open_laya_terminal)
         self.model_view.save_key_requested.connect(self._on_save_key)
         self.model_view.test_requested.connect(self._on_test_connection)
 
@@ -311,6 +362,13 @@ class MainWindow(QWidget):
         self.model_view.set_laya_done(ok)
         if ok:
             self._set_status("connected", "Laya ready")
+
+    def _on_open_laya_terminal(self) -> None:
+        opened = self._controller.open_laya_interactive_setup()
+        if not opened:
+            self.model_view.set_laya_status(
+                "No terminal emulator found. Run:  movo --laya-setup"
+            )
 
     def _on_save_key(self, key: str) -> None:
         self._secrets.set_api_key(key)
@@ -470,31 +528,100 @@ class MainWindow(QWidget):
         if tooltip:
             self.status_dot.setToolTip(tooltip)
 
-    # --- window drag & placement ----------------------------------------
-    def _bar_press(self, event) -> None:
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
-
-    def _bar_move(self, event) -> None:
-        if self._drag_offset is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            self.move(event.globalPosition().toPoint() - self._drag_offset)
-
-    def _position_centered_above(self) -> None:
-        """Horizontally centered, a little above the vertical center."""
+    # --- dynamic island (top-center, non-movable, hover to reveal) ------
+    def _setup_island(self) -> None:
+        """Compute retracted/revealed positions and show the top-edge trigger."""
         screen = QGuiApplication.primaryScreen()
         if screen is None:
             return
         geo = screen.availableGeometry()
         self.adjustSize()
         x = geo.left() + (geo.width() - self.width()) // 2
-        # Vertical: between the top and the center — ~30% down from the top,
-        # which reads as "higher than screen, lower than the centre point".
-        center_y = geo.top() + geo.height() // 2
-        y = geo.top() + int(geo.height() * 0.30)
-        y = min(y, center_y - self.height() // 2)
-        self.move(x, max(geo.top() + 20, y))
+        self._revealed_y = geo.top() + _TOP_MARGIN
+        # Retracted: almost fully above the top edge, leaving a peek sliver.
+        self._retracted_y = geo.top() - self.height() + _PEEK
+        self.move(x, self._retracted_y)
+        self._revealed = False
+
+        # Thin hover strip across the top-center of the screen.
+        tw = min(self.width(), 520)
+        self._trigger.setGeometry(
+            geo.left() + (geo.width() - tw) // 2, geo.top(), tw, _TRIGGER_H
+        )
+        self._trigger.show()
+
+        # Greet the user: drop down on launch, then retract after a moment so
+        # the auto-hide behaviour is discoverable.
+        QTimer.singleShot(300, self._reveal)
+        QTimer.singleShot(2600, self._retract_timer.start)
+
+    def _reveal(self) -> None:
+        if self._revealed:
+            return
+        self._revealed = True
+        self._animate_to(self._revealed_y, bounce=True)
+
+    def _retract(self) -> None:
+        if not self._revealed:
+            return
+        self._revealed = False
+        self._animate_to(self._retracted_y, bounce=False)
+
+    def _animate_to(self, y: int, bounce: bool) -> None:
+        self._anim.stop()
+        self._anim.setStartValue(self.pos())
+        self._anim.setEndValue(QPoint(self.x(), y))
+        self._anim.setEasingCurve(
+            QEasingCurve.Type.OutBounce if bounce else QEasingCurve.Type.InCubic
+        )
+        self._anim.setDuration(_ANIM_MS if bounce else 220)
+        self._anim.start()
+
+    def _text_input_active(self) -> bool:
+        """True while a text field is focused or the task input has content.
+
+        Keeps the island open while the user is typing, even if the mouse
+        leaves — so a run they are composing is never yanked away.
+        """
+        fw = self.focusWidget()
+        if isinstance(fw, QLineEdit):
+            return True
+        try:
+            if self.panel.input.text().strip():
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _maybe_retract(self) -> None:
+        # Do not retract while typing, running, or the pointer is still over us.
+        if self._text_input_active() or self._controller.running:
+            self._retract_timer.start()
+            return
+        if self.underMouse():
+            return
+        self._retract()
+
+    def enterEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        self._retract_timer.stop()
+        self._reveal()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        # Debounce so brief pointer exits (e.g. crossing a child border) don't
+        # retract; the timer re-checks typing/running/hover state.
+        self._retract_timer.start()
+        super().leaveEvent(event)
+
+    # The title bar is no longer a drag handle — the island is non-movable.
+    def _bar_press(self, event) -> None:  # kept for layout wiring; no-op
+        return None
+
+    def _bar_move(self, event) -> None:
+        return None
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        self._trigger.close()
         self._controller.shutdown()
         self._overlay.close()
         super().closeEvent(event)

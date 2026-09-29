@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "movo"
-version = "0.2.0"
+version = "0.2.1"
 description = "Movo: a floating Linux desktop computer-use agent powered by TypeSafe's Jev System One decision model."
 readme = "README.md"
 license = { file = "LICENSE" }
