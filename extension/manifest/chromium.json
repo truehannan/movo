@@ -5,7 +5,7 @@
   "description": "A browser agent that operates the current page, powered by Jev typed decisions.",
   "minimum_chrome_version": "114",
   "permissions": ["sidePanel", "tabs", "storage", "scripting", "activeTab"],
-  "host_permissions": ["http://*/*", "https://*/*"],
+  "host_permissions": ["<all_urls>"],
   "background": { "service_worker": "background.js", "type": "module" },
   "side_panel": { "default_path": "index.html" },
   "action": { "default_title": "Open Jev Agent" },

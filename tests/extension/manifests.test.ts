@@ -14,6 +14,7 @@ describe("manifests", () => {
     expect(JSON.stringify(m)).not.toContain("default_popup");
     expect(m.permissions).toContain("sidePanel");
     expect(m.permissions).toContain("scripting");
+    expect(m.host_permissions).toContain("<all_urls>");
   });
 
   it("firefox uses MV3 sidebar_action and declares no data collection", () => {
@@ -21,6 +22,8 @@ describe("manifests", () => {
     expect(m.manifest_version).toBe(3);
     expect(m.sidebar_action).toBeDefined();
     expect(JSON.stringify(m)).not.toContain("sidePanel");
+    expect(m.permissions).toContain("scripting");
+    expect(m.host_permissions).toContain("<all_urls>");
     const gecko = m.browser_specific_settings.gecko;
     expect(gecko.data_collection_permissions.required).toEqual(["none"]);
     expect(parseFloat(gecko.strict_min_version)).toBeGreaterThanOrEqual(140);

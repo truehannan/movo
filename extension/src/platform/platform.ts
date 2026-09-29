@@ -18,6 +18,8 @@ export interface BrowserPlatform {
   /** Persist a small preference value. */
   storageGet<T>(key: string, fallback: T): Promise<T>;
   storageSet<T>(key: string, value: T): Promise<void>;
+  /** Ensure host access to operate pages; returns true if granted. */
+  ensureHostAccess(): Promise<boolean>;
 }
 
 export function detectPlatform(): BrowserPlatform {

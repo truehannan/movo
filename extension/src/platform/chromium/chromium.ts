@@ -21,4 +21,15 @@ export class ChromiumPlatform implements BrowserPlatform {
   async storageSet<T>(key: string, value: T): Promise<void> {
     await chrome.storage.local.set({ [key]: value });
   }
+
+  async ensureHostAccess(): Promise<boolean> {
+    try {
+      const req = { origins: ["<all_urls>"] };
+      if (await chrome.permissions.contains(req)) return true;
+      return await chrome.permissions.request(req);
+    } catch {
+      // permissions API not available: rely on manifest host_permissions.
+      return true;
+    }
+  }
 }

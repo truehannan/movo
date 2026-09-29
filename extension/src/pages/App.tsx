@@ -64,6 +64,13 @@ export function App() {
     setActivity([]);
     setConfirming(null);
     setStatus("running");
+    // Ensure the extension can operate pages (grants host access on first run).
+    const granted = await platform.ensureHostAccess();
+    if (!granted) {
+      push({ kind: "message", status: "error", text: "Host permission denied. Allow access to run on this page." });
+      setStatus("error");
+      return;
+    }
     const tab = await platform.getActiveTab();
     if (tab.id == null) {
       push({ kind: "message", status: "error", text: "No active tab to control." });

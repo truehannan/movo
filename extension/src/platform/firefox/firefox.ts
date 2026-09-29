@@ -21,4 +21,14 @@ export class FirefoxPlatform implements BrowserPlatform {
   async storageSet<T>(key: string, value: T): Promise<void> {
     await browser.storage.local.set({ [key]: value });
   }
+
+  async ensureHostAccess(): Promise<boolean> {
+    try {
+      const req = { origins: ["<all_urls>"] };
+      if (await browser.permissions.contains(req)) return true;
+      return await browser.permissions.request(req);
+    } catch {
+      return true;
+    }
+  }
 }

@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "A browser agent that operates the current page, powered by Jev typed decisions.",
   "permissions": ["tabs", "storage", "scripting", "activeTab"],
-  "host_permissions": ["http://*/*", "https://*/*"],
+  "host_permissions": ["<all_urls>"],
   "background": { "scripts": ["background.js"] },
   "sidebar_action": {
     "default_title": "Jev Agent",
